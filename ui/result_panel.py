@@ -1,9 +1,11 @@
 import tkinter as tk
+from tkinter import ttk
 import numpy as np
 from PIL import Image, ImageTk
 
 from ui.bg_combo import BgCombo
-from ui.platform import FONT_FAMILY, HAS_DND
+import ui.platform as platform
+from ui.platform import FONT_FAMILY
 
 _CHECKER_SIZE = 10
 # pre-render cache at this max dimension for fast zoom
@@ -106,7 +108,7 @@ class ResultPanel(tk.Frame):
         tk.Label(header, text="Before", bg="#1e1e1e", fg="#888888",
                  font=(FONT_FAMILY, 9)).grid(row=0, column=0, sticky=tk.W)
         tk.Label(header, text="After", bg="#1e1e1e", fg="#888888",
-                 font=(FONT_FAMILY, 9)).grid(row=0, column=1, sticky=tk.W)
+                 font=(FONT_FAMILY, 9)).grid(row=0, column=1, sticky=tk.W, padx=(4, 0))
 
         bg_frame = tk.Frame(header, bg="#1e1e1e")
         bg_frame.grid(row=0, column=2, sticky=tk.E)
@@ -141,18 +143,51 @@ class ResultPanel(tk.Frame):
             canvas.bind("<B1-Motion>", self._on_pan_drag)
             canvas.bind("<ButtonRelease-1>", self._on_pan_end)
             canvas.bind("<Double-Button-1>", self._on_reset_zoom)
+            canvas.bind("<Enter>", lambda e: e.widget.focus_set())
+
+        # -- zoom slider --
+        self._zoom_scale_updating = False
+        self._zoom_render_timer = None
+
+        zoom_frame = tk.Frame(canvas_frame, bg="#1e1e1e")
+        zoom_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+
+        tk.Label(zoom_frame, text="\u2212", bg="#1e1e1e", fg="#888888",
+                 font=(FONT_FAMILY, 12)).pack(side=tk.LEFT, padx=(4, 0))
+
+        self._zoom_scale = ttk.Scale(
+            zoom_frame, from_=30, to=200, orient=tk.HORIZONTAL,
+            command=self._on_zoom_scale,
+        )
+        self._zoom_scale.set(100)
+        self._zoom_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
+        self._zoom_scale.bind("<Double-Button-1>", self._on_reset_zoom)
+
+        tk.Label(zoom_frame, text="+", bg="#1e1e1e", fg="#888888",
+                 font=(FONT_FAMILY, 12)).pack(side=tk.LEFT)
+
+        self._zoom_label = tk.Label(zoom_frame, text="100%", bg="#1e1e1e",
+                                     fg="#888888", font=(FONT_FAMILY, 8), width=5)
+        self._zoom_label.pack(side=tk.LEFT, padx=(4, 4))
+
+        tk.Label(zoom_frame, text="drag \u2192 pan  |  double-click \u2192 reset",
+                 bg="#1e1e1e", fg="#555555", font=(FONT_FAMILY, 8)
+                 ).pack(side=tk.RIGHT, padx=(0, 8))
 
         self._setup_drop()
 
     # ===== drop =====
 
     def _setup_drop(self):
-        if not HAS_DND:
+        if not platform.HAS_DND:
             return
-        from tkinterdnd2 import DND_FILES
-        for canvas in [self._before_canvas, self._after_canvas]:
-            canvas.drop_target_register(DND_FILES)
-            canvas.dnd_bind("<<Drop>>", self._on_canvas_drop)
+        try:
+            from tkinterdnd2 import DND_FILES
+            for canvas in [self._before_canvas, self._after_canvas]:
+                canvas.drop_target_register(DND_FILES)
+                canvas.dnd_bind("<<Drop>>", self._on_canvas_drop)
+        except Exception:
+            platform.HAS_DND = False
 
     def _on_canvas_drop(self, event):
         if self._on_file_dropped is None:
@@ -208,6 +243,7 @@ class ResultPanel(tk.Frame):
         self._pan_y = int(my - (my - self._pan_y) * ratio)
 
         # fast render from cache, schedule sharp render
+        self._sync_zoom_slider()
         self._render_fast()
         self._schedule_sharp()
 
@@ -226,9 +262,31 @@ class ResultPanel(tk.Frame):
             self._drag_pan = None
             self._schedule_sharp()
 
+    def _on_zoom_scale(self, val):
+        if self._zoom_scale_updating:
+            return
+        if not self._before_image and not self._result_image:
+            return
+        self._zoom = float(val) / 100.0
+        if hasattr(self, '_zoom_label'):
+            self._zoom_label.config(text=f"{int(float(val))}%")
+        self._render_fast()
+        # debounce sharp render while dragging
+        if self._zoom_render_timer:
+            self.after_cancel(self._zoom_render_timer)
+        self._zoom_render_timer = self.after(200, self._render_sharp)
+
+    def _sync_zoom_slider(self):
+        self._zoom_scale_updating = True
+        pct = int(self._zoom * 100)
+        self._zoom_scale.set(pct)
+        self._zoom_label.config(text=f"{pct}%")
+        self._zoom_scale_updating = False
+
     def _on_reset_zoom(self, _event):
         self._zoom = 1.0
         self._pan_x = self._pan_y = 0
+        self._sync_zoom_slider()
         self._render_sharp()
 
     def _update_pan_positions(self):
@@ -302,6 +360,7 @@ class ResultPanel(tk.Frame):
         self._before_image = pil_image
         self._zoom = 1.0
         self._pan_x = self._pan_y = 0
+        self._sync_zoom_slider()
         self._rebuild_before_cache()
         self._before_photo, self._before_img_id = self._render_one(
             self._before_canvas, self._before_image, None)

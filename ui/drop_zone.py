@@ -1,7 +1,6 @@
 import tkinter as tk
-from ui.platform import FONT_FAMILY, HAS_DND
-if HAS_DND:
-    from tkinterdnd2 import DND_FILES
+import ui.platform as platform
+from ui.platform import FONT_FAMILY
 
 
 VALID_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
@@ -25,11 +24,15 @@ class DropZone(tk.Canvas):
         self.bind("<Button-1>", self._on_click)
 
         # tkinterdnd2 bindings (graceful fallback: browse-only if unavailable)
-        if HAS_DND:
-            self.drop_target_register(DND_FILES)
-            self.dnd_bind("<<DropEnter>>", self._on_drag_enter)
-            self.dnd_bind("<<DropLeave>>", self._on_drag_leave)
-            self.dnd_bind("<<Drop>>", self._on_drop)
+        if platform.HAS_DND:
+            try:
+                from tkinterdnd2 import DND_FILES
+                self.drop_target_register(DND_FILES)
+                self.dnd_bind("<<DropEnter>>", self._on_drag_enter)
+                self.dnd_bind("<<DropLeave>>", self._on_drag_leave)
+                self.dnd_bind("<<Drop>>", self._on_drop)
+            except Exception:
+                platform.HAS_DND = False
 
     # -- drawing helpers --
 
@@ -52,7 +55,7 @@ class DropZone(tk.Canvas):
         w = self.winfo_width() or 580
         h = self.winfo_height() or 140
         cx, cy = w // 2, h // 2
-        if HAS_DND:
+        if platform.HAS_DND:
             title = "DROP IMAGE HERE"
             subtitle = "or click to browse  (JPG / PNG / WEBP / BMP)"
         else:

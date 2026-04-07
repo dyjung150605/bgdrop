@@ -1,8 +1,9 @@
 import os
 import tkinter as tk
 from tkinter import ttk
-from PIL import Image
+from PIL import Image, ImageOps
 
+import ui.platform as platform
 from ui.platform import FONT_FAMILY
 from ui.drop_zone import DropZone, VALID_EXTENSIONS
 from ui.result_panel import ResultPanel
@@ -110,7 +111,8 @@ class AppWindow:
                 "rembg \ub0b4\uc7a5 \ubaa8\ud3f4\ub85c\uc9c0 \uc5f0\uc0b0\n"
                 "\uce68\uc2dd/\ud321\ucc3d\uc73c\ub85c \ub9c8\uc2a4\ud06c \uacbd\uacc4 \uc815\ub9ac\n"
                 "\ud070 \ub369\uc5b4\ub9ac \ub178\uc774\uc988\uc640 \uad6c\uba4d \uc81c\uac70")
-        self._postmask_var = tk.BooleanVar(value=True)
+        _pipe_default = not platform.IS_MACOS
+        self._postmask_var = tk.BooleanVar(value=_pipe_default)
         self._postmask_var.trace_add("write", self._on_reprocess_toggle)
         tk.Checkbutton(
             frame, text="Post Process Mask", variable=self._postmask_var,
@@ -132,7 +134,7 @@ class AppWindow:
                 "alpha < 80 \u2192 \uc644\uc804 \ud22c\uba85\n"
                 "alpha > 200 \u2192 \uc644\uc804 \ubd88\ud22c\uba85\n"
                 "Post Process Mask\uc640 \ubcd1\uc6a9 \uc2dc \uc2dc\ub108\uc9c0 \ud6a8\uacfc")
-        self._alpha_clean_var = tk.BooleanVar(value=True)
+        self._alpha_clean_var = tk.BooleanVar(value=_pipe_default)
         self._alpha_clean_var.trace_add("write", self._on_alpha_clean_toggle)
         tk.Checkbutton(
             frame, text="Alpha Clean", variable=self._alpha_clean_var,
@@ -260,11 +262,18 @@ class AppWindow:
 
         try:
             img = Image.open(filepath)
+            img = ImageOps.exif_transpose(img)
             if img.mode not in ("RGB", "RGBA"):
                 img = img.convert("RGBA")
         except Exception as e:
             self._set_status(f"Cannot open image: {e}")
             return
+
+        # Downscale if too large to prevent excessive memory usage
+        _MAX_DIM = 4096
+        if max(img.size) > _MAX_DIM:
+            img.thumbnail((_MAX_DIM, _MAX_DIM), Image.LANCZOS)
+            self._set_status(f"Image resized to {img.size[0]}×{img.size[1]} (max {_MAX_DIM}px)")
 
         self._source_image = img                    # original (RGBA OK) for Before preview
         self._process_image = img.convert("RGB")     # RGB for rembg (always consistent)

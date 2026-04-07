@@ -1,8 +1,10 @@
 import tkinter as tk
+from tkinter import ttk
 import numpy as np
 from PIL import Image, ImageTk
 
 from ui.bg_combo import BgCombo
+import ui.platform as platform
 from ui.platform import FONT_FAMILY
 
 _CHECKER_SIZE = 10
@@ -168,21 +170,53 @@ class EditPanel(tk.Frame):
         self._canvas.bind("<Motion>", self._on_motion)
         self._canvas.bind("<MouseWheel>", self._on_wheel)
         self._canvas.bind("<Configure>", self._on_canvas_resize)
+        self._canvas.bind("<Enter>", lambda e: e.widget.focus_set())
         self._canvas.bind("<Key-Escape>", self._on_key_escape)
         self._canvas.bind("<Key-Return>", self._on_key_return)
-        # Ctrl key visual feedback
-        self._canvas.bind("<KeyPress-Control_L>", lambda e: self._canvas.config(cursor="fleur"))
-        self._canvas.bind("<KeyRelease-Control_L>", lambda e: self._restore_cursor())
-        self._canvas.bind("<KeyPress-Control_R>", lambda e: self._canvas.config(cursor="fleur"))
-        self._canvas.bind("<KeyRelease-Control_R>", lambda e: self._restore_cursor())
-        # zoom/pan: Ctrl+wheel = zoom, Ctrl+drag or middle-drag = pan
+        # Pan modifier: macOS = Option+drag, Windows = Alt+drag (same key, different name)
+        if platform.IS_MACOS:
+            pan_mod = "Option"
+            self._canvas.bind("<KeyPress-Alt_L>", lambda e: self._canvas.config(cursor="fleur"))
+            self._canvas.bind("<KeyRelease-Alt_L>", lambda e: self._restore_cursor())
+        else:
+            pan_mod = "Alt"
+            self._canvas.bind("<KeyPress-Alt_L>", lambda e: self._canvas.config(cursor="fleur"))
+            self._canvas.bind("<KeyRelease-Alt_L>", lambda e: self._restore_cursor())
+            self._canvas.bind("<KeyPress-Alt_R>", lambda e: self._canvas.config(cursor="fleur"))
+            self._canvas.bind("<KeyRelease-Alt_R>", lambda e: self._restore_cursor())
+        # zoom/pan: Ctrl+wheel = zoom, modifier+drag or middle-drag = pan
         self._canvas.bind("<Control-MouseWheel>", self._on_zoom_wheel)
-        self._canvas.bind("<Control-ButtonPress-1>", self._on_pan_start)
-        self._canvas.bind("<Control-B1-Motion>", self._on_pan_drag)
-        self._canvas.bind("<Control-ButtonRelease-1>", self._on_pan_end)
+        self._canvas.bind(f"<{pan_mod}-ButtonPress-1>", self._on_pan_start)
+        self._canvas.bind(f"<{pan_mod}-B1-Motion>", self._on_pan_drag)
+        self._canvas.bind(f"<{pan_mod}-ButtonRelease-1>", self._on_pan_end)
         self._canvas.bind("<ButtonPress-2>", self._on_pan_start)
         self._canvas.bind("<B2-Motion>", self._on_pan_drag)
         self._canvas.bind("<ButtonRelease-2>", self._on_pan_end)
+
+        # -- zoom slider --
+        self._zoom_scale_updating = False
+        self._zoom_render_timer = None
+
+        zoom_frame = tk.Frame(self, bg="#1e1e1e")
+        zoom_frame.pack(fill=tk.X, padx=8, pady=(4, 0))
+
+        tk.Label(zoom_frame, text="\u2212", bg="#1e1e1e", fg="#888888",
+                 font=(FONT_FAMILY, 12)).pack(side=tk.LEFT, padx=(4, 0))
+
+        self._zoom_scale = ttk.Scale(
+            zoom_frame, from_=30, to=200, orient=tk.HORIZONTAL,
+            command=self._on_zoom_scale,
+        )
+        self._zoom_scale.set(100)
+        self._zoom_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
+        self._zoom_scale.bind("<Double-Button-1>", self._on_zoom_reset)
+
+        tk.Label(zoom_frame, text="+", bg="#1e1e1e", fg="#888888",
+                 font=(FONT_FAMILY, 12)).pack(side=tk.LEFT)
+
+        self._zoom_label = tk.Label(zoom_frame, text="100%", bg="#1e1e1e",
+                                     fg="#888888", font=(FONT_FAMILY, 8), width=5)
+        self._zoom_label.pack(side=tk.LEFT, padx=(4, 8))
 
     # -- public --
 
@@ -196,6 +230,7 @@ class EditPanel(tk.Frame):
         self._edit_zoom = 1.0
         self._edit_pan_x = 0
         self._edit_pan_y = 0
+        self._sync_zoom_slider()
         self._original_stem = stem
         self._format_var.set(format_val)
         self._canvas.focus_set()
@@ -229,11 +264,32 @@ class EditPanel(tk.Frame):
 
     # -- zoom / pan --
 
+    def _on_zoom_scale(self, val):
+        if self._zoom_scale_updating:
+            return
+        self._edit_zoom = float(val) / 100.0
+        if hasattr(self, '_zoom_label'):
+            self._zoom_label.config(text=f"{int(float(val))}%")
+            self._refresh_canvas()
+
+    def _sync_zoom_slider(self):
+        self._zoom_scale_updating = True
+        pct = int(self._edit_zoom * 100)
+        self._zoom_scale.set(pct)
+        self._zoom_label.config(text=f"{pct}%")
+        self._zoom_scale_updating = False
+
+    def _edit_zoom_by(self, factor):
+        self._edit_zoom = max(0.3, min(self._edit_zoom * factor, 10.0))
+        self._sync_zoom_slider()
+        self._refresh_canvas()
+
     def _on_zoom_wheel(self, event):
         factor = 1.15
         self._edit_zoom = min(self._edit_zoom * factor, 10.0) if event.delta > 0 \
             else max(self._edit_zoom / factor, 0.3)
         # zoom from center — no pan adjustment, no drift
+        self._sync_zoom_slider()
         self._refresh_canvas()
 
     def _on_pan_drag(self, event):
@@ -263,6 +319,7 @@ class EditPanel(tk.Frame):
     def _on_zoom_reset(self, _event):
         self._edit_zoom = 1.0
         self._edit_pan_x = self._edit_pan_y = 0
+        self._sync_zoom_slider()
         self._refresh_canvas()
 
     # -- tool selection --
@@ -274,12 +331,13 @@ class EditPanel(tk.Frame):
         self._crop_phase = None
         self._update_buttons()
         self._canvas.focus_set()
+        _pan_key = "Opt" if platform.IS_MACOS else "Alt"
         if tool == "crop":
             self._canvas.config(cursor="crosshair")
-            self._hint_var.set("Drag to crop  (Shift \u2192 square)")
+            self._hint_var.set(f"{_pan_key}+drag \u2192 pan")
         elif tool == "mosaic":
             self._canvas.config(cursor="none")
-            self._hint_var.set(f"Brush {self._mosaic_radius}  (wheel to resize)")
+            self._hint_var.set(f"Brush {self._mosaic_radius}  |  {_pan_key}+drag \u2192 pan")
 
     def _update_buttons(self):
         for btn, name in [(self._crop_btn, "crop"), (self._mosaic_btn, "mosaic")]:
@@ -386,7 +444,7 @@ class EditPanel(tk.Frame):
         if self._tool == "mosaic":
             delta = 3 if event.delta > 0 else -3
             self._mosaic_radius = max(_BRUSH_MIN, min(_BRUSH_MAX, self._mosaic_radius + delta))
-            self._hint_var.set(f"Brush {self._mosaic_radius}  (wheel to resize)")
+            self._hint_var.set(f"Brush {self._mosaic_radius}")
             self._canvas.delete("cursor")
             r = self._mosaic_radius * self._scale
             rgb = self._get_pixel_color_at(event.x, event.y)
