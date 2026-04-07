@@ -71,7 +71,7 @@ class BackgroundRemover:
 
     def remove_async(
         self, pil_image: Image.Image, on_success, on_error,
-        alpha_clean=True, alpha_matting=False,
+        alpha_clean=True, alpha_matting=False, post_process_mask=True,
     ):
         """Run background removal in a worker thread."""
 
@@ -81,7 +81,7 @@ class BackgroundRemover:
                 pil_image.save(buf, format="PNG")
                 kwargs = dict(
                     session=self.session,
-                    post_process_mask=True,
+                    post_process_mask=post_process_mask,
                 )
                 if alpha_matting:
                     kwargs.update(

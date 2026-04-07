@@ -26,6 +26,18 @@ def _hex_to_rgb(h):
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
 
 
+def _composite(display, bg_color):
+    dw, dh = display.size
+    if bg_color is None:
+        return display
+    bg = Image.new("RGB", (dw, dh), _hex_to_rgb(bg_color))
+    if display.mode == "RGBA":
+        bg.paste(display, mask=display.split()[3])
+    else:
+        bg.paste(display)
+    return bg
+
+
 def _complementary_hex(r, g, b):
     """Return hex color complementary to (r,g,b)."""
     cr, cg, cb = 255 - r, 255 - g, 255 - b
@@ -57,6 +69,12 @@ class EditPanel(tk.Frame):
         self._original_stem = ""
         self._resize_timer = None
         self._refresh_scheduled = False
+
+        # zoom / pan
+        self._edit_zoom = 1.0
+        self._edit_pan_x = 0
+        self._edit_pan_y = 0
+        self._pan_drag = None
 
         # mosaic
         self._mosaic_radius = _BRUSH_DEFAULT
@@ -124,18 +142,17 @@ class EditPanel(tk.Frame):
             ).pack(side=tk.LEFT, padx=4)
 
         tk.Button(
-            btn_frame, text="Save", command=self._do_save,
-            bg="#00d4aa", fg="#1e1e1e", activebackground="#00b894",
-            font=("Segoe UI", 10, "bold"), relief=tk.FLAT, padx=20, pady=2,
+            btn_frame, text="Cancel", command=self._do_cancel, width=10,
+            bg="#3a3a3a", fg="#e0e0e0", activebackground="#4a4a4a",
+            font=("Segoe UI", 10, "bold"), relief=tk.FLAT, pady=3,
             cursor="hand2",
-        ).pack(side=tk.LEFT, padx=(12, 4))
-
+        ).pack(side=tk.RIGHT, padx=(4, 0))
         tk.Button(
-            btn_frame, text="Cancel", command=self._do_cancel,
-            bg="#555555", fg="#e0e0e0", activebackground="#777777",
-            font=("Segoe UI", 10), relief=tk.FLAT, padx=16, pady=2,
+            btn_frame, text="Save", command=self._do_save, width=10,
+            bg="#00d4aa", fg="#1e1e1e", activebackground="#00b894",
+            font=("Segoe UI", 10, "bold"), relief=tk.FLAT, pady=3,
             cursor="hand2",
-        ).pack(side=tk.LEFT, padx=(4, 0))
+        ).pack(side=tk.RIGHT)
 
         # -- canvas --
         self._canvas = tk.Canvas(
@@ -152,6 +169,19 @@ class EditPanel(tk.Frame):
         self._canvas.bind("<Configure>", self._on_canvas_resize)
         self._canvas.bind("<Key-Escape>", self._on_key_escape)
         self._canvas.bind("<Key-Return>", self._on_key_return)
+        # Ctrl key visual feedback
+        self._canvas.bind("<KeyPress-Control_L>", lambda e: self._canvas.config(cursor="fleur"))
+        self._canvas.bind("<KeyRelease-Control_L>", lambda e: self._restore_cursor())
+        self._canvas.bind("<KeyPress-Control_R>", lambda e: self._canvas.config(cursor="fleur"))
+        self._canvas.bind("<KeyRelease-Control_R>", lambda e: self._restore_cursor())
+        # zoom/pan: Ctrl+wheel = zoom, Ctrl+drag or middle-drag = pan
+        self._canvas.bind("<Control-MouseWheel>", self._on_zoom_wheel)
+        self._canvas.bind("<Control-ButtonPress-1>", self._on_pan_start)
+        self._canvas.bind("<Control-B1-Motion>", self._on_pan_drag)
+        self._canvas.bind("<Control-ButtonRelease-1>", self._on_pan_end)
+        self._canvas.bind("<ButtonPress-2>", self._on_pan_start)
+        self._canvas.bind("<B2-Motion>", self._on_pan_drag)
+        self._canvas.bind("<ButtonRelease-2>", self._on_pan_end)
 
     # -- public --
 
@@ -162,6 +192,9 @@ class EditPanel(tk.Frame):
         self._crop_phase = None
         self._crop_image_rect = None
         self._mosaic_radius = _BRUSH_DEFAULT
+        self._edit_zoom = 1.0
+        self._edit_pan_x = 0
+        self._edit_pan_y = 0
         self._original_stem = stem
         self._format_var.set(format_val)
         self._canvas.focus_set()
@@ -183,6 +216,53 @@ class EditPanel(tk.Frame):
         if self._resize_timer:
             self.after_cancel(self._resize_timer)
         self._resize_timer = self.after(80, self._refresh_canvas)
+
+    def _restore_cursor(self):
+        if self._tool == "crop":
+            cursor = "fleur" if self._crop_phase == "placed" else "crosshair"
+        elif self._tool == "mosaic":
+            cursor = "none"
+        else:
+            cursor = "crosshair"
+        self._canvas.config(cursor=cursor)
+
+    # -- zoom / pan --
+
+    def _on_zoom_wheel(self, event):
+        factor = 1.15
+        self._edit_zoom = min(self._edit_zoom * factor, 10.0) if event.delta > 0 \
+            else max(self._edit_zoom / factor, 0.3)
+        # zoom from center — no pan adjustment, no drift
+        self._refresh_canvas()
+
+    def _on_pan_drag(self, event):
+        if self._pan_drag:
+            sx, sy, px, py = self._pan_drag
+            self._edit_pan_x = px + (event.x - sx)
+            self._edit_pan_y = py + (event.y - sy)
+            # move canvas items directly — no re-render, no flicker
+            self._canvas.delete("cursor")
+            items = self._canvas.find_all()
+            dx = event.x - self._last_pan_x if hasattr(self, '_last_pan_x') else 0
+            dy = event.y - self._last_pan_y if hasattr(self, '_last_pan_y') else 0
+            for item in items:
+                self._canvas.move(item, dx, dy)
+            self._last_pan_x = event.x
+            self._last_pan_y = event.y
+
+    def _on_pan_start(self, event):
+        self._pan_drag = (event.x, event.y, self._edit_pan_x, self._edit_pan_y)
+        self._last_pan_x = event.x
+        self._last_pan_y = event.y
+
+    def _on_pan_end(self, _event):
+        self._pan_drag = None
+        self._refresh_canvas()  # sharp re-render at final position
+
+    def _on_zoom_reset(self, _event):
+        self._edit_zoom = 1.0
+        self._edit_pan_x = self._edit_pan_y = 0
+        self._refresh_canvas()
 
     # -- tool selection --
 
@@ -245,14 +325,14 @@ class EditPanel(tk.Frame):
             return
         iw, ih = self._working.size
 
-        self._scale = min((cw - 8) / iw, (ch - 8) / ih, 1.0)
+        base_scale = min((cw - 8) / iw, (ch - 8) / ih, 1.0)
+        self._scale = base_scale * self._edit_zoom
         dw = int(iw * self._scale)
         dh = int(ih * self._scale)
-        self._offset_x = (cw - dw) // 2
-        self._offset_y = (ch - dh) // 2
+        self._offset_x = (cw - dw) // 2 + self._edit_pan_x
+        self._offset_y = (ch - dh) // 2 + self._edit_pan_y
 
-        display = self._working.copy()
-        display.thumbnail((dw, dh), Image.LANCZOS)
+        display = self._working.resize((dw, dh), Image.LANCZOS)
         self._display_pil = display  # cache for pixel picking
 
         final = self._composite(display)
@@ -318,6 +398,8 @@ class EditPanel(tk.Frame):
     # ==================== MOUSE ====================
 
     def _on_press(self, event):
+        if event.state & 0x4:  # Ctrl held — pan mode, skip tool
+            return
         if self._tool is None or self._working is None:
             return
         self._canvas.focus_set()
@@ -327,6 +409,8 @@ class EditPanel(tk.Frame):
             self._mosaic_on_press(event)
 
     def _on_drag(self, event):
+        if event.state & 0x4:  # Ctrl held
+            return
         if self._tool == "crop":
             self._crop_on_drag(event)
         elif self._tool == "mosaic" and self._mosaic_painting:
@@ -334,6 +418,8 @@ class EditPanel(tk.Frame):
             self._schedule_refresh()
 
     def _on_release(self, event):
+        if event.state & 0x4:
+            return
         if self._tool == "crop":
             self._crop_on_release(event)
         elif self._tool == "mosaic":
@@ -487,6 +573,9 @@ class EditPanel(tk.Frame):
             self._cleanup_crop()
         self._working = self._original.copy()
         self._history = []
+        self._edit_zoom = 1.0
+        self._edit_pan_x = 0
+        self._edit_pan_y = 0
         self._refresh_canvas()
 
     # -- save / cancel --
@@ -513,11 +602,16 @@ class EditPanel(tk.Frame):
         )
         if not path:
             return
-        if fmt == "webp":
-            self._working.save(path, format="WEBP", lossless=True)
+        # composite on background if selected, otherwise transparent
+        if self._bg_color is None:
+            save_img = self._working
         else:
-            self._working.save(path, format="PNG")
-        self._on_save_cb()
+            save_img = _composite(self._working, self._bg_color)
+        if fmt == "webp":
+            save_img.save(path, format="WEBP", lossless=True)
+        else:
+            save_img.save(path, format="PNG")
+        # stay in edit mode (don't call _on_save_cb)
 
     def _do_cancel(self):
         self._working = None

@@ -52,7 +52,7 @@ class BgCombo(tk.Frame):
             c.create_rectangle(cx, cy, cx + s, cy + s, fill="#ccc", outline="")
             c.create_rectangle(cx, cy - s, cx + s, cy, fill="#fff", outline="")
             c.create_rectangle(cx - s, cy, cx, cy + s, fill="#fff", outline="")
-            c.create_oval(cx - r, cy - r, cx + r, cy + r, outline="#888", width=1, tags="ring")
+            c.create_oval(cx - r, cy - r, cx + r, cy + r, outline="", width=0, tags="ring")
         elif key == "custom":
             # rainbow-ish gradient hint: just a multi-color split
             c.create_arc(cx - r, cy - r, cx + r, cy + r, start=0, extent=90,
@@ -108,4 +108,4 @@ class BgCombo(tk.Frame):
             if key == self._selected:
                 canvas.itemconfig("ring", outline="#00d4aa", width=2)
             else:
-                canvas.itemconfig("ring", outline="#888", width=1)
+                canvas.itemconfig("ring", outline="#555", width=1)

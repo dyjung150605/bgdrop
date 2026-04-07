@@ -5,6 +5,8 @@ from PIL import Image, ImageTk
 from ui.bg_combo import BgCombo
 
 _CHECKER_SIZE = 10
+# pre-render cache at this max dimension for fast zoom
+_CACHE_MAX = 1200
 
 
 def _make_checker(width, height):
@@ -22,18 +24,30 @@ def _hex_to_rgb(h):
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
 
 
+def _composite(display, bg_color):
+    dw, dh = display.size
+    bg = _make_checker(dw, dh) if bg_color is None else Image.new("RGB", (dw, dh), _hex_to_rgb(bg_color))
+    if display.mode == "RGBA":
+        bg.paste(display, mask=display.split()[3])
+    else:
+        bg.paste(display)
+    return bg
+
+
 class ResultPanel(tk.Frame):
     """Before / After preview with shared zoom/pan and background selector."""
 
-    def __init__(self, parent, on_edit=None, **kwargs):
+    def __init__(self, parent, on_edit=None, on_file_dropped=None, **kwargs):
         super().__init__(parent, bg="#1e1e1e", **kwargs)
         self._result_image = None
         self._before_image = None
         self._original_stem = ""
         self._on_edit_cb = on_edit
+        self._on_file_dropped = on_file_dropped
         self._spinner_angle = 0
         self._spinner_running = False
         self._resize_timer = None
+        self._sharp_timer = None
         self._bg_color = None
 
         # zoom / pan
@@ -45,7 +59,10 @@ class ResultPanel(tk.Frame):
         self._after_img_id = None
         self._before_photo = None
         self._after_photo = None
-        self._cached_zoom = None
+
+        # pre-composited caches (at _CACHE_MAX size) for fast zoom
+        self._before_cache = None  # PIL RGB
+        self._after_cache = None   # PIL RGB
 
         # -- save row (BOTTOM) --
         save_frame = tk.Frame(self, bg="#1e1e1e")
@@ -62,7 +79,6 @@ class ResultPanel(tk.Frame):
                 font=("Segoe UI", 10),
             ).pack(side=tk.LEFT, padx=3)
 
-        # buttons right-aligned, same width
         self._edit_btn = tk.Button(
             save_frame, text="Edit", command=self._on_edit, width=10,
             bg="#3a3a3a", fg="#00d4aa", activebackground="#4a4a4a",
@@ -72,14 +88,14 @@ class ResultPanel(tk.Frame):
         )
         self._edit_btn.pack(side=tk.RIGHT, padx=(4, 0))
         self._save_btn = tk.Button(
-            save_frame, text="Save File", command=self._on_save, width=10,
+            save_frame, text="Save", command=self._on_save, width=10,
             bg="#00d4aa", fg="#1e1e1e", activebackground="#00b894",
             font=("Segoe UI", 10, "bold"), relief=tk.FLAT, pady=3,
             cursor="hand2", state=tk.DISABLED,
         )
-        self._save_btn.pack(side=tk.RIGHT, padx=(0, 0))
+        self._save_btn.pack(side=tk.RIGHT)
 
-        # -- header: Before | After | BG circles --
+        # -- header --
         header = tk.Frame(self, bg="#1e1e1e")
         header.pack(fill=tk.X, pady=(0, 2))
         header.columnconfigure(0, weight=1, uniform="hdr")
@@ -98,7 +114,7 @@ class ResultPanel(tk.Frame):
         self._bg_combo = BgCombo(bg_frame, on_change=self._on_bg_change, bg="#1e1e1e")
         self._bg_combo.pack(side=tk.LEFT)
 
-        # -- canvases: grid uniform 50:50 --
+        # -- canvases --
         canvas_frame = tk.Frame(self, bg="#1e1e1e")
         canvas_frame.pack(fill=tk.BOTH, expand=True)
         canvas_frame.columnconfigure(0, weight=1, uniform="cv")
@@ -125,12 +141,50 @@ class ResultPanel(tk.Frame):
             canvas.bind("<ButtonRelease-1>", self._on_pan_end)
             canvas.bind("<Double-Button-1>", self._on_reset_zoom)
 
+        self._setup_drop()
+
+    # ===== drop =====
+
+    def _setup_drop(self):
+        from tkinterdnd2 import DND_FILES
+        for canvas in [self._before_canvas, self._after_canvas]:
+            canvas.drop_target_register(DND_FILES)
+            canvas.dnd_bind("<<Drop>>", self._on_canvas_drop)
+
+    def _on_canvas_drop(self, event):
+        if self._on_file_dropped is None:
+            return event.action
+        raw = event.data
+        if raw.startswith("{"):
+            end = raw.index("}")
+            path = raw[1:end]
+        else:
+            path = raw.split()[0] if raw else ""
+        if path:
+            self._on_file_dropped(path)
+        return event.action
+
     # ===== background =====
 
     def _on_bg_change(self, color):
         self._bg_color = color
-        self._invalidate_cache()
-        self._rerender_zoom()
+        self._rebuild_before_cache()
+        self._rebuild_after_cache()
+        self._render_fast()
+
+    # ===== caching =====
+
+    def _rebuild_before_cache(self):
+        if self._before_image:
+            t = self._before_image.copy()
+            t.thumbnail((_CACHE_MAX, _CACHE_MAX), Image.LANCZOS)
+            self._before_cache = _composite(t, self._bg_color)
+
+    def _rebuild_after_cache(self):
+        if self._result_image:
+            t = self._result_image.copy()
+            t.thumbnail((_CACHE_MAX, _CACHE_MAX), Image.LANCZOS)
+            self._after_cache = _composite(t, self._bg_color)
 
     # ===== zoom / pan =====
 
@@ -150,10 +204,9 @@ class ResultPanel(tk.Frame):
         self._pan_x = int(mx - (mx - self._pan_x) * ratio)
         self._pan_y = int(my - (my - self._pan_y) * ratio)
 
-        if abs(self._zoom - (self._cached_zoom or 1.0)) / max(self._cached_zoom or 1.0, 0.01) > 0.25:
-            self._rerender_zoom()
-        else:
-            self._update_pan_positions()
+        # fast render from cache, schedule sharp render
+        self._render_fast()
+        self._schedule_sharp()
 
     def _on_pan_start(self, event):
         self._drag_pan = (event.x, event.y, self._pan_x, self._pan_y)
@@ -168,12 +221,12 @@ class ResultPanel(tk.Frame):
     def _on_pan_end(self, _event):
         if self._drag_pan:
             self._drag_pan = None
-            self._rerender_zoom()
+            self._schedule_sharp()
 
     def _on_reset_zoom(self, _event):
         self._zoom = 1.0
         self._pan_x = self._pan_y = 0
-        self._rerender_zoom()
+        self._render_sharp()
 
     def _update_pan_positions(self):
         if self._before_img_id and self._before_image:
@@ -183,66 +236,62 @@ class ResultPanel(tk.Frame):
             cw, ch = self._after_canvas.winfo_width(), self._after_canvas.winfo_height()
             self._after_canvas.coords(self._after_img_id, cw // 2 + self._pan_x, ch // 2 + self._pan_y)
 
-    def _invalidate_cache(self):
-        self._cached_zoom = None
-
-    def _rerender_zoom(self):
-        self._resize_timer = None
-        if self._before_image:
-            self._render_before()
-        if self._result_image and not self._spinner_running:
-            self._render_after()
-        self._cached_zoom = self._zoom
+    def _schedule_sharp(self):
+        if self._sharp_timer:
+            self.after_cancel(self._sharp_timer)
+        self._sharp_timer = self.after(200, self._render_sharp)
 
     def _on_canvas_resize(self, _event=None):
         if self._resize_timer:
             self.after_cancel(self._resize_timer)
-        self._resize_timer = self.after(60, self._rerender_zoom)
+        self._resize_timer = self.after(80, self._render_sharp)
 
     # ===== rendering =====
-
-    def _composite(self, display):
-        dw, dh = display.size
-        bg_c = self._bg_color
-        bg = _make_checker(dw, dh) if bg_c is None else Image.new("RGB", (dw, dh), _hex_to_rgb(bg_c))
-        if display.mode == "RGBA":
-            bg.paste(display, mask=display.split()[3])
-        else:
-            bg.paste(display)
-        return bg
 
     def _canvas_bg(self):
         return self._bg_color if self._bg_color else "#2a2a2a"
 
-    def _render_before(self):
-        cw, ch = self._before_canvas.winfo_width(), self._before_canvas.winfo_height()
-        if cw < 20 or ch < 20:
-            return
-        iw, ih = self._before_image.size
+    def _render_one(self, canvas, source, cache):
+        """Render from cache (fast) or source (sharp) onto canvas."""
+        cw, ch = canvas.winfo_width(), canvas.winfo_height()
+        if cw < 20 or ch < 20 or source is None:
+            return None, None
+        iw, ih = source.size
         scale = min((cw - 4) / iw, (ch - 4) / ih) * self._zoom
         dw, dh = max(1, int(iw * scale)), max(1, int(ih * scale))
-        display = self._before_image.resize((dw, dh), Image.LANCZOS)
-        final = self._composite(display)
-        self._before_canvas.config(bg=self._canvas_bg())
-        self._before_photo = ImageTk.PhotoImage(final)
-        self._before_canvas.delete("all")
-        self._before_img_id = self._before_canvas.create_image(
-            cw // 2 + self._pan_x, ch // 2 + self._pan_y, image=self._before_photo)
 
-    def _render_after(self):
-        cw, ch = self._after_canvas.winfo_width(), self._after_canvas.winfo_height()
-        if cw < 20 or ch < 20:
-            return
-        iw, ih = self._result_image.size
-        scale = min((cw - 4) / iw, (ch - 4) / ih) * self._zoom
-        dw, dh = max(1, int(iw * scale)), max(1, int(ih * scale))
-        display = self._result_image.resize((dw, dh), Image.LANCZOS)
-        final = self._composite(display)
-        self._after_canvas.config(bg=self._canvas_bg())
-        self._after_photo = ImageTk.PhotoImage(final)
-        self._after_canvas.delete("all")
-        self._after_img_id = self._after_canvas.create_image(
-            cw // 2 + self._pan_x, ch // 2 + self._pan_y, image=self._after_photo)
+        if cache is not None:
+            img = cache.resize((dw, dh), Image.BILINEAR)
+        else:
+            display = source.resize((dw, dh), Image.LANCZOS)
+            img = _composite(display, self._bg_color)
+
+        canvas.config(bg=self._canvas_bg())
+        photo = ImageTk.PhotoImage(img)
+        canvas.delete("all")
+        img_id = canvas.create_image(
+            cw // 2 + self._pan_x, ch // 2 + self._pan_y, image=photo)
+        return photo, img_id
+
+    def _render_fast(self):
+        """Quick render from pre-composited caches."""
+        if self._before_image:
+            self._before_photo, self._before_img_id = self._render_one(
+                self._before_canvas, self._before_image, self._before_cache)
+        if self._result_image and not self._spinner_running:
+            self._after_photo, self._after_img_id = self._render_one(
+                self._after_canvas, self._result_image, self._after_cache)
+
+    def _render_sharp(self):
+        """Full quality render from original images."""
+        self._sharp_timer = None
+        self._resize_timer = None
+        if self._before_image:
+            self._before_photo, self._before_img_id = self._render_one(
+                self._before_canvas, self._before_image, None)
+        if self._result_image and not self._spinner_running:
+            self._after_photo, self._after_img_id = self._render_one(
+                self._after_canvas, self._result_image, None)
 
     # ===== public =====
 
@@ -250,12 +299,15 @@ class ResultPanel(tk.Frame):
         self._before_image = pil_image
         self._zoom = 1.0
         self._pan_x = self._pan_y = 0
-        self._invalidate_cache()
-        self._render_before()
+        self._rebuild_before_cache()
+        self._before_photo, self._before_img_id = self._render_one(
+            self._before_canvas, self._before_image, None)
 
     def show_after(self, pil_image):
         self._result_image = pil_image
-        self._render_after()
+        self._rebuild_after_cache()
+        self._after_photo, self._after_img_id = self._render_one(
+            self._after_canvas, self._result_image, None)
         self._save_btn.config(state=tk.NORMAL)
         self._edit_btn.config(state=tk.NORMAL)
         self.stop_spinner()
@@ -281,6 +333,7 @@ class ResultPanel(tk.Frame):
         self._result_image = self._before_image = None
         self._before_img_id = self._after_img_id = None
         self._before_photo = self._after_photo = None
+        self._before_cache = self._after_cache = None
         self._save_btn.config(state=tk.DISABLED)
         self._edit_btn.config(state=tk.DISABLED)
         self.stop_spinner()
@@ -303,6 +356,12 @@ class ResultPanel(tk.Frame):
         if self._result_image and self._on_edit_cb:
             self._on_edit_cb(self._result_image, self._format_var.get(), self._original_stem)
 
+    def _prepare_save_image(self, source):
+        """Composite on selected background if any, otherwise save as-is (transparent)."""
+        if self._bg_color is None:
+            return source  # checker = transparent, save RGBA as-is
+        return _composite(source, self._bg_color)
+
     def _on_save(self):
         if self._result_image is None:
             return
@@ -315,7 +374,8 @@ class ResultPanel(tk.Frame):
             filetypes=[(f"{fmt.upper()} files", f"*{ext}"), ("All files", "*.*")])
         if not path:
             return
+        save_img = self._prepare_save_image(self._result_image)
         if fmt == "webp":
-            self._result_image.save(path, format="WEBP", lossless=True)
+            save_img.save(path, format="WEBP", lossless=True)
         else:
-            self._result_image.save(path, format="PNG")
+            save_img.save(path, format="PNG")

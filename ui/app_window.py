@@ -20,6 +20,7 @@ class AppWindow:
         self._processing = False
         self._last_filepath = None
         self._source_image = None
+        self._process_image = None
         self._raw_result = None
 
         # ===== main view widgets =====
@@ -27,16 +28,16 @@ class AppWindow:
 
         # -- status bar (pack BOTTOM first — always visible) --
         self._status_var = tk.StringVar(value="Loading model...")
-        status_frame = tk.Frame(root, bg="#181818")
-        status_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        self._status_frame = tk.Frame(root, bg="#181818")
+        self._status_frame.pack(side=tk.BOTTOM, fill=tk.X)
         self._status_bar = tk.Label(
-            status_frame, textvariable=self._status_var,
+            self._status_frame, textvariable=self._status_var,
             bg="#181818", fg="#888888", anchor=tk.W,
             font=("Segoe UI", 9), padx=8, pady=4,
         )
         self._status_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
         tk.Label(
-            status_frame, text="v1.0", bg="#181818", fg="#555555",
+            self._status_frame, text="v1.0", bg="#181818", fg="#555555",
             font=("Segoe UI", 8), padx=8, pady=4,
         ).pack(side=tk.RIGHT)
 
@@ -55,7 +56,8 @@ class AppWindow:
         self._main_widgets.append(self.drop_zone)
 
         # -- result panel (fills remaining space) --
-        self.result_panel = ResultPanel(root, on_edit=self._enter_edit)
+        self.result_panel = ResultPanel(root, on_edit=self._enter_edit,
+                                        on_file_dropped=self._on_file)
         self.result_panel.pack(side=tk.TOP, padx=20, pady=(0, 4),
                                fill=tk.BOTH, expand=True)
         self._main_widgets.append(self.result_panel)
@@ -98,15 +100,37 @@ class AppWindow:
         tk.Label(frame, text="\u25b6", bg="#1e1e1e", fg="#555555",
                  font=("Segoe UI", 7)).pack(side=tk.LEFT, padx=(0, 6))
 
+        # Post Process Mask + info (rembg 내장 모폴로지)
+        info_pm = tk.Label(frame, text="\u24d8", bg="#1e1e1e", fg="#00d4aa",
+                           font=("Segoe UI", 11), cursor="hand2")
+        info_pm.pack(side=tk.LEFT)
+        ToolTip(info_pm,
+                "Post Process Mask\n"
+                "rembg \ub0b4\uc7a5 \ubaa8\ud3f4\ub85c\uc9c0 \uc5f0\uc0b0\n"
+                "\uce68\uc2dd/\ud321\ucc3d\uc73c\ub85c \ub9c8\uc2a4\ud06c \uacbd\uacc4 \uc815\ub9ac\n"
+                "\ud070 \ub369\uc5b4\ub9ac \ub178\uc774\uc988\uc640 \uad6c\uba4d \uc81c\uac70")
+        self._postmask_var = tk.BooleanVar(value=True)
+        self._postmask_var.trace_add("write", self._on_reprocess_toggle)
+        tk.Checkbutton(
+            frame, text="Post Process Mask", variable=self._postmask_var,
+            bg="#1e1e1e", fg="#e0e0e0", selectcolor="#2a2a2a",
+            activebackground="#1e1e1e", activeforeground="#00d4aa",
+            font=("Segoe UI", 9),
+        ).pack(side=tk.LEFT, padx=(0, 6))
+
+        tk.Label(frame, text="\u25b6", bg="#1e1e1e", fg="#555555",
+                 font=("Segoe UI", 7)).pack(side=tk.LEFT, padx=(0, 6))
+
         # Alpha Clean + info
-        info2 = tk.Label(frame, text="\u24d8", bg="#1e1e1e", fg="#00d4aa",
-                         font=("Segoe UI", 11), cursor="hand2")
-        info2.pack(side=tk.LEFT)
-        ToolTip(info2,
+        info_ac = tk.Label(frame, text="\u24d8", bg="#1e1e1e", fg="#00d4aa",
+                           font=("Segoe UI", 11), cursor="hand2")
+        info_ac.pack(side=tk.LEFT)
+        ToolTip(info_ac,
                 "Alpha Clean\n"
                 "\ubc18\ud22c\uba85 \ud5e4\uc77c\ub85c(\ubc88\uc9d0) \uc81c\uac70\n"
                 "alpha < 80 \u2192 \uc644\uc804 \ud22c\uba85\n"
-                "alpha > 200 \u2192 \uc644\uc804 \ubd88\ud22c\uba85")
+                "alpha > 200 \u2192 \uc644\uc804 \ubd88\ud22c\uba85\n"
+                "Post Process Mask\uc640 \ubcd1\uc6a9 \uc2dc \uc2dc\ub108\uc9c0 \ud6a8\uacfc")
         self._alpha_clean_var = tk.BooleanVar(value=True)
         self._alpha_clean_var.trace_add("write", self._on_alpha_clean_toggle)
         tk.Checkbutton(
@@ -120,10 +144,10 @@ class AppWindow:
                  font=("Segoe UI", 7)).pack(side=tk.LEFT, padx=(0, 6))
 
         # Alpha Matting + info
-        info3 = tk.Label(frame, text="\u24d8", bg="#1e1e1e", fg="#00d4aa",
-                         font=("Segoe UI", 11), cursor="hand2")
-        info3.pack(side=tk.LEFT)
-        ToolTip(info3,
+        info_am = tk.Label(frame, text="\u24d8", bg="#1e1e1e", fg="#00d4aa",
+                           font=("Segoe UI", 11), cursor="hand2")
+        info_am.pack(side=tk.LEFT)
+        ToolTip(info_am,
                 "Alpha Matting\n"
                 "\uba38\ub9ac\uce74\ub77d/\ud138 \ub4f1 \uac00\ub294 \ub514\ud14c\uc77c\uc758\n"
                 "\uacbd\uacc4\ub97c \uc815\ubc00\ud558\uac8c \ub2e4\ub46f\uc74c\n"
@@ -144,7 +168,7 @@ class AppWindow:
             w.pack_forget()
         self.edit_panel.pack(side=tk.TOP, padx=10, pady=(6, 0),
                              fill=tk.BOTH, expand=True,
-                             before=self._status_bar)
+                             before=self._status_frame)
         self.edit_panel.load_image(result_image, format_val, stem)
         self._set_status("Edit mode  \u2014  Crop / Mosaic")
 
@@ -181,11 +205,15 @@ class AppWindow:
     def _on_alpha_clean_toggle(self, *_args):
         if self._raw_result is None:
             return
+        state = "ON" if self._alpha_clean_var.get() else "OFF"
+        self._set_status(f"Alpha Clean {state}")
         self._apply_final_and_show()
 
     def _on_reprocess_toggle(self, *_args):
-        if self._source_image is not None and not self._processing:
-            self._run_removal(self._source_image)
+        if self._process_image is not None and not self._processing:
+            state = "ON" if self._alpha_matting_var.get() else "OFF"
+            self._set_status(f"Alpha Matting {state} — reprocessing...")
+            self._run_removal(self._process_image)
 
     def _apply_final_and_show(self):
         if self._alpha_clean_var.get():
@@ -203,9 +231,9 @@ class AppWindow:
         label = "Online" if mode == "online" else "Offline"
         self.root.after(0, self._set_status, f"Ready  [{model_name} / {label}]")
         self.root.after(0, self._model_combo.config, {"state": "readonly"})
-        if getattr(self, "_pending_reprocess", False) and self._source_image is not None:
+        if getattr(self, "_pending_reprocess", False) and self._process_image is not None:
             self._pending_reprocess = False
-            self.root.after(0, self._run_removal, self._source_image)
+            self.root.after(0, self._run_removal, self._process_image)
 
     def _on_session_error(self, err):
         self.root.after(0, self._set_status, f"Model load error: {err}")
@@ -230,14 +258,17 @@ class AppWindow:
         self.result_panel.set_original_stem(stem)
 
         try:
-            img = Image.open(filepath).convert("RGB")
+            img = Image.open(filepath)
+            if img.mode not in ("RGB", "RGBA"):
+                img = img.convert("RGBA")
         except Exception as e:
             self._set_status(f"Cannot open image: {e}")
             return
 
-        self._source_image = img
+        self._source_image = img                    # original (RGBA OK) for Before preview
+        self._process_image = img.convert("RGB")     # RGB for rembg (always consistent)
         self.result_panel.show_before(img)
-        self._run_removal(img)
+        self._run_removal(self._process_image)
 
     def _run_removal(self, img):
         self._processing = True
@@ -251,6 +282,7 @@ class AppWindow:
             on_error=lambda err: self.root.after(0, self._on_error, err),
             alpha_clean=False,
             alpha_matting=self._alpha_matting_var.get(),
+            post_process_mask=self._postmask_var.get(),
         )
 
     def _on_done(self, result_image):
