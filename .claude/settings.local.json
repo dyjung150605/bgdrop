@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(curl -sI --connect-timeout 10 \"https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx\")"
+      "Bash(curl -sI --connect-timeout 10 \"https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx\")",
+      "Bash(chmod +x \"D:/_DATA/_modeling/002_BGDROP/BgDrop/build.sh\")"
     ]
   }
 }

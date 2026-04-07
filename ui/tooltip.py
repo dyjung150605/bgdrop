@@ -1,4 +1,5 @@
 import tkinter as tk
+from ui.platform import FONT_FAMILY
 
 
 class ToolTip:
@@ -21,7 +22,7 @@ class ToolTip:
         label = tk.Label(
             tw, text=self.text, justify=tk.LEFT,
             bg="#333333", fg="#e0e0e0", relief=tk.SOLID, borderwidth=1,
-            font=("Segoe UI", 9), padx=8, pady=6, wraplength=280,
+            font=(FONT_FAMILY, 9), padx=8, pady=6, wraplength=280,
         )
         label.pack()
 

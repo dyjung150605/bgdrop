@@ -1,5 +1,7 @@
 import tkinter as tk
-from tkinterdnd2 import DND_FILES
+from ui.platform import FONT_FAMILY, HAS_DND
+if HAS_DND:
+    from tkinterdnd2 import DND_FILES
 
 
 VALID_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
@@ -22,11 +24,12 @@ class DropZone(tk.Canvas):
         self.bind("<Configure>", lambda e: self._draw_idle())
         self.bind("<Button-1>", self._on_click)
 
-        # tkinterdnd2 bindings
-        self.drop_target_register(DND_FILES)
-        self.dnd_bind("<<DropEnter>>", self._on_drag_enter)
-        self.dnd_bind("<<DropLeave>>", self._on_drag_leave)
-        self.dnd_bind("<<Drop>>", self._on_drop)
+        # tkinterdnd2 bindings (graceful fallback: browse-only if unavailable)
+        if HAS_DND:
+            self.drop_target_register(DND_FILES)
+            self.dnd_bind("<<DropEnter>>", self._on_drag_enter)
+            self.dnd_bind("<<DropLeave>>", self._on_drag_leave)
+            self.dnd_bind("<<Drop>>", self._on_drop)
 
     # -- drawing helpers --
 
@@ -49,15 +52,21 @@ class DropZone(tk.Canvas):
         w = self.winfo_width() or 580
         h = self.winfo_height() or 140
         cx, cy = w // 2, h // 2
+        if HAS_DND:
+            title = "DROP IMAGE HERE"
+            subtitle = "or click to browse  (JPG / PNG / WEBP / BMP)"
+        else:
+            title = "CLICK TO BROWSE"
+            subtitle = "JPG / PNG / WEBP / BMP"
         self.create_text(
             cx, cy - 12,
-            text="DROP IMAGE HERE",
-            fill="#e0e0e0", font=("Segoe UI", 14, "bold"), tags="label",
+            text=title,
+            fill="#e0e0e0", font=(FONT_FAMILY, 14, "bold"), tags="label",
         )
         self.create_text(
             cx, cy + 14,
-            text="or click to browse  (JPG / PNG / WEBP / BMP)",
-            fill="#888888", font=("Segoe UI", 9), tags="label",
+            text=subtitle,
+            fill="#888888", font=(FONT_FAMILY, 9), tags="label",
         )
 
     # -- event handlers --

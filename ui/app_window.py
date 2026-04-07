@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import ttk
 from PIL import Image
 
+from ui.platform import FONT_FAMILY
 from ui.drop_zone import DropZone, VALID_EXTENSIONS
 from ui.result_panel import ResultPanel
 from ui.edit_panel import EditPanel
@@ -33,12 +34,12 @@ class AppWindow:
         self._status_bar = tk.Label(
             self._status_frame, textvariable=self._status_var,
             bg="#181818", fg="#888888", anchor=tk.W,
-            font=("Segoe UI", 9), padx=8, pady=4,
+            font=(FONT_FAMILY, 9), padx=8, pady=4,
         )
         self._status_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
         tk.Label(
             self._status_frame, text="v1.0", bg="#181818", fg="#555555",
-            font=("Segoe UI", 8), padx=8, pady=4,
+            font=(FONT_FAMILY, 8), padx=8, pady=4,
         ).pack(side=tk.RIGHT)
 
         # -- pipeline controls (pack BOTTOM — sticks above status bar) --
@@ -75,12 +76,12 @@ class AppWindow:
     def _build_pipeline(self, frame):
         tk.Label(
             frame, text="Pipeline:", bg="#1e1e1e", fg="#666666",
-            font=("Segoe UI", 8),
+            font=(FONT_FAMILY, 8),
         ).pack(side=tk.LEFT, padx=(0, 6))
 
         # Model selector + info
         info1 = tk.Label(frame, text="\u24d8", bg="#1e1e1e", fg="#00d4aa",
-                         font=("Segoe UI", 11), cursor="hand2")
+                         font=(FONT_FAMILY, 11), cursor="hand2")
         info1.pack(side=tk.LEFT)
         ToolTip(info1,
                 "AI \ubaa8\ub378 \uc120\ud0dd\n"
@@ -98,11 +99,11 @@ class AppWindow:
         self._model_combo.bind("<<ComboboxSelected>>", self._on_model_change)
 
         tk.Label(frame, text="\u25b6", bg="#1e1e1e", fg="#555555",
-                 font=("Segoe UI", 7)).pack(side=tk.LEFT, padx=(0, 6))
+                 font=(FONT_FAMILY, 7)).pack(side=tk.LEFT, padx=(0, 6))
 
         # Post Process Mask + info (rembg 내장 모폴로지)
         info_pm = tk.Label(frame, text="\u24d8", bg="#1e1e1e", fg="#00d4aa",
-                           font=("Segoe UI", 11), cursor="hand2")
+                           font=(FONT_FAMILY, 11), cursor="hand2")
         info_pm.pack(side=tk.LEFT)
         ToolTip(info_pm,
                 "Post Process Mask\n"
@@ -115,15 +116,15 @@ class AppWindow:
             frame, text="Post Process Mask", variable=self._postmask_var,
             bg="#1e1e1e", fg="#e0e0e0", selectcolor="#2a2a2a",
             activebackground="#1e1e1e", activeforeground="#00d4aa",
-            font=("Segoe UI", 9),
+            font=(FONT_FAMILY, 9),
         ).pack(side=tk.LEFT, padx=(0, 6))
 
         tk.Label(frame, text="\u25b6", bg="#1e1e1e", fg="#555555",
-                 font=("Segoe UI", 7)).pack(side=tk.LEFT, padx=(0, 6))
+                 font=(FONT_FAMILY, 7)).pack(side=tk.LEFT, padx=(0, 6))
 
         # Alpha Clean + info
         info_ac = tk.Label(frame, text="\u24d8", bg="#1e1e1e", fg="#00d4aa",
-                           font=("Segoe UI", 11), cursor="hand2")
+                           font=(FONT_FAMILY, 11), cursor="hand2")
         info_ac.pack(side=tk.LEFT)
         ToolTip(info_ac,
                 "Alpha Clean\n"
@@ -137,15 +138,15 @@ class AppWindow:
             frame, text="Alpha Clean", variable=self._alpha_clean_var,
             bg="#1e1e1e", fg="#e0e0e0", selectcolor="#2a2a2a",
             activebackground="#1e1e1e", activeforeground="#00d4aa",
-            font=("Segoe UI", 9),
+            font=(FONT_FAMILY, 9),
         ).pack(side=tk.LEFT, padx=(0, 6))
 
         tk.Label(frame, text="\u25b6", bg="#1e1e1e", fg="#555555",
-                 font=("Segoe UI", 7)).pack(side=tk.LEFT, padx=(0, 6))
+                 font=(FONT_FAMILY, 7)).pack(side=tk.LEFT, padx=(0, 6))
 
         # Alpha Matting + info
         info_am = tk.Label(frame, text="\u24d8", bg="#1e1e1e", fg="#00d4aa",
-                           font=("Segoe UI", 11), cursor="hand2")
+                           font=(FONT_FAMILY, 11), cursor="hand2")
         info_am.pack(side=tk.LEFT)
         ToolTip(info_am,
                 "Alpha Matting\n"
@@ -158,7 +159,7 @@ class AppWindow:
             frame, text="Alpha Matting", variable=self._alpha_matting_var,
             bg="#1e1e1e", fg="#e0e0e0", selectcolor="#2a2a2a",
             activebackground="#1e1e1e", activeforeground="#00d4aa",
-            font=("Segoe UI", 9),
+            font=(FONT_FAMILY, 9),
         ).pack(side=tk.LEFT)
 
     # ===== view switching =====

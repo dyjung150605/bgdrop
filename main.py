@@ -9,12 +9,14 @@ if sys.platform == "win32":
         pass
 
 import tkinter as tk
-from tkinterdnd2 import TkinterDnD
+from ui.platform import HAS_DND
+if HAS_DND:
+    from tkinterdnd2 import TkinterDnD
 from ui.app_window import AppWindow
 
 
 def main():
-    root = TkinterDnD.Tk()
+    root = TkinterDnD.Tk() if HAS_DND else tk.Tk()
     root.title("BGDrop")
     root.geometry("800x650")
     root.minsize(640, 520)

@@ -3,6 +3,7 @@ import numpy as np
 from PIL import Image, ImageTk
 
 from ui.bg_combo import BgCombo
+from ui.platform import FONT_FAMILY
 
 _CHECKER_SIZE = 10
 _MOSAIC_BLOCK = 10
@@ -92,12 +93,12 @@ class EditPanel(tk.Frame):
         toolbar.pack(side=tk.TOP, fill=tk.X, pady=(4, 4), padx=8)
 
         tk.Label(toolbar, text="Tools:", bg="#1e1e1e", fg="#888888",
-                 font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(0, 6))
+                 font=(FONT_FAMILY, 9)).pack(side=tk.LEFT, padx=(0, 6))
 
         self._crop_btn = tk.Button(
             toolbar, text="Crop", command=lambda: self._select_tool("crop"),
             bg="#2a2a2a", fg="#e0e0e0", activebackground="#00d4aa",
-            font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=12, pady=2,
+            font=(FONT_FAMILY, 9, "bold"), relief=tk.FLAT, padx=12, pady=2,
             cursor="hand2",
         )
         self._crop_btn.pack(side=tk.LEFT, padx=(0, 4))
@@ -105,7 +106,7 @@ class EditPanel(tk.Frame):
         self._mosaic_btn = tk.Button(
             toolbar, text="Mosaic", command=lambda: self._select_tool("mosaic"),
             bg="#2a2a2a", fg="#e0e0e0", activebackground="#00d4aa",
-            font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=12, pady=2,
+            font=(FONT_FAMILY, 9, "bold"), relief=tk.FLAT, padx=12, pady=2,
             cursor="hand2",
         )
         self._mosaic_btn.pack(side=tk.LEFT, padx=(0, 4))
@@ -113,7 +114,7 @@ class EditPanel(tk.Frame):
         self._reset_btn = tk.Button(
             toolbar, text="Reset", command=self._reset,
             bg="#2a2a2a", fg="#e0e0e0", activebackground="#ffaa00",
-            font=("Segoe UI", 9), relief=tk.FLAT, padx=10, pady=2,
+            font=(FONT_FAMILY, 9), relief=tk.FLAT, padx=10, pady=2,
             cursor="hand2",
         )
         self._reset_btn.pack(side=tk.LEFT, padx=(8, 0))
@@ -122,11 +123,11 @@ class EditPanel(tk.Frame):
         self._bg_combo = BgCombo(toolbar, on_change=self._on_bg_change, bg="#1e1e1e")
         self._bg_combo.pack(side=tk.RIGHT, padx=(4, 0))
         tk.Label(toolbar, text="BG", bg="#1e1e1e", fg="#888888",
-                 font=("Segoe UI", 8)).pack(side=tk.RIGHT)
+                 font=(FONT_FAMILY, 8)).pack(side=tk.RIGHT)
 
         self._hint_var = tk.StringVar(value="Select a tool")
         tk.Label(toolbar, textvariable=self._hint_var, bg="#1e1e1e", fg="#666666",
-                 font=("Segoe UI", 8)).pack(side=tk.RIGHT, padx=(0, 12))
+                 font=(FONT_FAMILY, 8)).pack(side=tk.RIGHT, padx=(0, 12))
 
         # -- bottom buttons --
         btn_frame = tk.Frame(self, bg="#1e1e1e")
@@ -138,19 +139,19 @@ class EditPanel(tk.Frame):
                 btn_frame, text=label, variable=self._format_var, value=fmt,
                 bg="#1e1e1e", fg="#e0e0e0", selectcolor="#2a2a2a",
                 activebackground="#1e1e1e", activeforeground="#00d4aa",
-                font=("Segoe UI", 9),
+                font=(FONT_FAMILY, 9),
             ).pack(side=tk.LEFT, padx=4)
 
         tk.Button(
             btn_frame, text="Cancel", command=self._do_cancel, width=10,
             bg="#3a3a3a", fg="#e0e0e0", activebackground="#4a4a4a",
-            font=("Segoe UI", 10, "bold"), relief=tk.FLAT, pady=3,
+            font=(FONT_FAMILY, 10, "bold"), relief=tk.FLAT, pady=3,
             cursor="hand2",
         ).pack(side=tk.RIGHT, padx=(4, 0))
         tk.Button(
             btn_frame, text="Save", command=self._do_save, width=10,
             bg="#00d4aa", fg="#1e1e1e", activebackground="#00b894",
-            font=("Segoe UI", 10, "bold"), relief=tk.FLAT, pady=3,
+            font=(FONT_FAMILY, 10, "bold"), relief=tk.FLAT, pady=3,
             cursor="hand2",
         ).pack(side=tk.RIGHT)
 

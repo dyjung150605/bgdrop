@@ -3,6 +3,7 @@ import numpy as np
 from PIL import Image, ImageTk
 
 from ui.bg_combo import BgCombo
+from ui.platform import FONT_FAMILY, HAS_DND
 
 _CHECKER_SIZE = 10
 # pre-render cache at this max dimension for fast zoom
@@ -69,28 +70,28 @@ class ResultPanel(tk.Frame):
         save_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(6, 0))
 
         tk.Label(save_frame, text="Save as:", bg="#1e1e1e", fg="#e0e0e0",
-                 font=("Segoe UI", 10)).pack(side=tk.LEFT, padx=(0, 6))
+                 font=(FONT_FAMILY, 10)).pack(side=tk.LEFT, padx=(0, 6))
         self._format_var = tk.StringVar(value="png")
         for fmt, label in [("png", "PNG"), ("webp", "WebP")]:
             tk.Radiobutton(
                 save_frame, text=label, variable=self._format_var, value=fmt,
                 bg="#1e1e1e", fg="#e0e0e0", selectcolor="#2a2a2a",
                 activebackground="#1e1e1e", activeforeground="#00d4aa",
-                font=("Segoe UI", 10),
+                font=(FONT_FAMILY, 10),
             ).pack(side=tk.LEFT, padx=3)
 
         self._edit_btn = tk.Button(
             save_frame, text="Edit", command=self._on_edit, width=10,
             bg="#3a3a3a", fg="#00d4aa", activebackground="#4a4a4a",
             activeforeground="#00d4aa",
-            font=("Segoe UI", 10, "bold"), relief=tk.FLAT, pady=3,
+            font=(FONT_FAMILY, 10, "bold"), relief=tk.FLAT, pady=3,
             cursor="hand2", state=tk.DISABLED,
         )
         self._edit_btn.pack(side=tk.RIGHT, padx=(4, 0))
         self._save_btn = tk.Button(
             save_frame, text="Save", command=self._on_save, width=10,
             bg="#00d4aa", fg="#1e1e1e", activebackground="#00b894",
-            font=("Segoe UI", 10, "bold"), relief=tk.FLAT, pady=3,
+            font=(FONT_FAMILY, 10, "bold"), relief=tk.FLAT, pady=3,
             cursor="hand2", state=tk.DISABLED,
         )
         self._save_btn.pack(side=tk.RIGHT)
@@ -103,14 +104,14 @@ class ResultPanel(tk.Frame):
         header.columnconfigure(2, weight=0)
 
         tk.Label(header, text="Before", bg="#1e1e1e", fg="#888888",
-                 font=("Segoe UI", 9)).grid(row=0, column=0, sticky=tk.W)
+                 font=(FONT_FAMILY, 9)).grid(row=0, column=0, sticky=tk.W)
         tk.Label(header, text="After", bg="#1e1e1e", fg="#888888",
-                 font=("Segoe UI", 9)).grid(row=0, column=1, sticky=tk.W)
+                 font=(FONT_FAMILY, 9)).grid(row=0, column=1, sticky=tk.W)
 
         bg_frame = tk.Frame(header, bg="#1e1e1e")
         bg_frame.grid(row=0, column=2, sticky=tk.E)
         tk.Label(bg_frame, text="BG", bg="#1e1e1e", fg="#666666",
-                 font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 2))
+                 font=(FONT_FAMILY, 8)).pack(side=tk.LEFT, padx=(0, 2))
         self._bg_combo = BgCombo(bg_frame, on_change=self._on_bg_change, bg="#1e1e1e")
         self._bg_combo.pack(side=tk.LEFT)
 
@@ -146,6 +147,8 @@ class ResultPanel(tk.Frame):
     # ===== drop =====
 
     def _setup_drop(self):
+        if not HAS_DND:
+            return
         from tkinterdnd2 import DND_FILES
         for canvas in [self._before_canvas, self._after_canvas]:
             canvas.drop_target_register(DND_FILES)
