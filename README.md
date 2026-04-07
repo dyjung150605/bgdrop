@@ -47,7 +47,7 @@ Produces two builds in `dist/`:
 ## Requirements
 
 - Python 3.13+
-- Windows 10/11
+- Windows 10/11 (primary), macOS (supported), Windows ARM (native)
 
 ## Dependencies
 
@@ -60,6 +60,17 @@ Produces two builds in `dist/`:
 | tkinter | Python PSF | GUI (bundled with Python) |
 
 All AI models used (`isnet-general-use`, `u2net`, `u2net_human_seg`) are **MIT licensed** and free for commercial use.
+
+## Processing Pipeline
+
+| Stage | Algorithm | Description |
+|-------|-----------|-------------|
+| **ISNet / U2Net inference** | AI (ONNX deep learning) | Predicts foreground/background probability per pixel, generates alpha mask |
+| **Post Process Mask** | Image morphology (erosion/dilation) | Cleans mask boundaries, removes noise and holes |
+| **Alpha Clean** | Threshold remapping (NumPy) | Sharpens semi-transparent halo: alpha < 80 → transparent, > 200 → opaque |
+| **Alpha Matting** | Laplacian matting (SciPy linear algebra) | Refines fine edges like hair and fur |
+| **Crop / Mosaic** | Image manipulation (Pillow) | Region crop and pixel-block mosaic brush |
+| **Zoom / Pan / UI** | GUI framework (tkinter) | Canvas rendering, event handling, layout |
 
 ## License
 
