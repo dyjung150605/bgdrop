@@ -153,6 +153,81 @@ AI 기반 배경제거 데스크톱 앱. 드래그&드롭으로 즉시 배경 �
 2. Nuitka 실험 — 2순위, 코드 수정 최소
 3. Tauri 포팅 — 3순위, 장기 옵션 (UI 모던화 겸)
 
+#### 🔀 전면 이주 시 3가지 스택 비교 (개인 메모)
+
+BgDrop의 UI 자유도/크기/시작속도를 근본적으로 개선할 3가지 후보를 검토.
+
+##### 총평 (요약)
+
+| 스택 | 바이너리 | 시작 | 외관 자유도 | 학습 비용 | BgDrop 적합도 |
+|---|---|---|---|---|---|
+| **Python + PyInstaller (현재)** | 380MB | 10초 | 중 (tkinter 제약) | 없음 (유지) | ⭐⭐ |
+| **C# + Avalonia** | ~40-60MB | <1초 | 중상 (Fluent + XAML 스타일) | 중 (C# + XAML) | ⭐⭐⭐⭐⭐ |
+| **Rust + Tauri** | ~15MB | <0.5초 | **최상** (HTML/CSS/JS 전면) | 상 (Rust + 웹프런트) | ⭐⭐⭐⭐ |
+
+##### Python + PyInstaller (현재)
+
+**장점**
+- 코드 유지 비용 0 — 이주 공수 없음
+- rembg/PIL/numpy/scipy 생태계 유지, ML 관련 실험 용이
+
+**단점**
+- 바이너리 **380MB** (onnxruntime + numpy + scipy + numba 등 누적)
+- 시작 10초 (onedir 언팩 + Python 초기화 + 의존성 import)
+- tkinter UI 자유도 낮음 (모던 애니메이션/스타일링 약함)
+- 플랫폼별 패키징 장애 (pymatting metadata, tkdnd 로딩 이슈 등 반복)
+
+##### C# + Avalonia
+
+**장점**
+- **ONNX Runtime C# 바인딩이 first-class** — 파이썬만큼 깔끔
+- 크로스플랫폼 (Win/Mac/Linux) 유지
+- 바이너리 **40-60MB**, 시작 **<1초**
+- XAML + MVVM 패턴이 UI/로직 분리에 명확
+- Visual Studio/Rider 도구가 Python 대비 압도적 (리팩토링/디버깅)
+- C 경험자에게 C# 문법/개념 이해가 빠름
+
+**단점**
+- XAML 스타일링은 CSS보다 verbose, 디자인 에셋 생태계 좁음
+- Fluent 기본 테마는 깔끔하지만 "트렌디"한 느낌은 Tauri보다 덜함
+- 완전히 새로운 언어/GUI 패러다임 학습 필요
+- Win32 경험자 기준: **WindowProc/메시지 루프가 사라져서 디스패치 흐름이 추상화됨** — 당황 포인트
+
+**BgDrop 관점**
+- 실용적인 "파이썬에서 벗어나 빠르게 완성" 경로
+- 외관은 현재보다 크게 나아지지만, Tauri만큼 화려하진 않음
+
+##### Rust + Tauri
+
+**장점**
+- 바이너리 **~15MB** (충격적), 시작 **<0.5초**
+- UI는 HTML/CSS/JS → **외관 자유도 최상** (Tailwind, shadcn/ui, Framer Motion 등 모두 가능)
+- BgDrop의 "썸네일 갤러리 + Before/After + 드래그드롭" 패턴은 웹 UI가 홈그라운드 (Canvas, CSS filter, object-fit, 브라우저 DnD API 등)
+- `ort` crate로 ONNX Runtime Rust 바인딩 사용 가능
+- 완성 후 **배포 편의성 + 사용자 경험 최고 수준**
+
+**단점**
+- **학습 비용 가장 큼**: Rust(소유권/라이프타임) + 웹 프런트(React/Svelte 등) + Tauri IPC — 3축 동시 학습
+- ONNX Rust 바인딩은 파이썬/C# 대비 API 거침, 문서 빈약
+- 빌드 파이프라인 복잡 (rustup, cargo, Node.js, bundler 모두 필요)
+- 디버깅은 프런트/백엔드 2개 도구 필요
+
+**BgDrop 관점**
+- 이 프로젝트가 "학습 도구 + 완성도 있는 결과물" 두 역할을 한다면 최적
+- 러닝 자체를 즐기는 스타일이면 BgDrop 이주는 훌륭한 실전 프로젝트
+
+##### 내 생각 요약
+
+- **"빨리 끝내고 다른 프로젝트 하고 싶다"** → C# + Avalonia
+- **"이 프로젝트를 브랜드 있는 앱으로 키우고 싶다 + Rust 배워볼 때"** → Rust + Tauri
+- **"Python은 이 도메인에선 이미 우회적(ONNX는 C++)으로 돌고 있어 이주 명분은 충분"** — 어느 쪽이든 이주는 정당화됨
+
+**타협안 검토 (Tauri + Python 백엔드)**
+- UI만 Tauri, AI는 파이썬 서브프로세스 호출
+- 장점: Rust 최소화하면서 UI 외관 챙김
+- 단점: Python 런타임 포함해야 해서 바이너리 경량화 이득 사라짐, 아키텍처 복잡
+- **비추천** — 갈 거면 Rust까지, 아니면 C#로 실용적으로.
+
 ---
 
 ### 🎯 자동 조합 선택 기능
