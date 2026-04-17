@@ -1,156 +1,169 @@
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
+  import '../app.css';
+  import { onMount, onDestroy } from 'svelte';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { convertFileSrc } from '@tauri-apps/api/core';
+  import { open } from '@tauri-apps/plugin-dialog';
+  import DropZone from '$lib/DropZone.svelte';
+  import ImagePanel from '$lib/ImagePanel.svelte';
 
-  let name = $state("");
-  let greetMsg = $state("");
+  const VALID_EXT = new Set(['jpg', 'jpeg', 'png', 'webp', 'bmp']);
 
-  async function greet(event: Event) {
-    event.preventDefault();
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    greetMsg = await invoke("greet", { name });
+  let beforeSrc = $state<string | null>(null);
+  let status = $state('이미지를 드롭하거나 클릭해서 불러오세요.');
+  let isDragOver = $state(false);
+
+  let unlisten: (() => void) | null = null;
+
+  onMount(async () => {
+    unlisten = await getCurrentWindow().onDragDropEvent((event) => {
+      const t = event.payload.type;
+      if (t === 'enter') {
+        isDragOver = true;
+      } else if (t === 'leave') {
+        isDragOver = false;
+      } else if (t === 'drop') {
+        isDragOver = false;
+        const paths = (event.payload as any).paths as string[];
+        if (paths?.length) handleFilePath(paths[0]);
+      }
+    });
+  });
+
+  onDestroy(() => { unlisten?.(); });
+
+  function ext(path: string) {
+    return path.split('.').pop()?.toLowerCase() ?? '';
+  }
+
+  function filename(path: string) {
+    return path.split(/[\\/]/).pop() ?? path;
+  }
+
+  function handleFilePath(path: string) {
+    if (!VALID_EXT.has(ext(path))) {
+      status = `지원하지 않는 형식: .${ext(path)}`;
+      return;
+    }
+    beforeSrc = convertFileSrc(path);
+    status = filename(path);
+  }
+
+  function reset() {
+    beforeSrc = null;
+    status = '이미지를 드롭하거나 클릭해서 불러오세요.';
+  }
+
+  async function browse() {
+    const file = await open({
+      multiple: false,
+      filters: [{ name: 'Image', extensions: [...VALID_EXT] }],
+    });
+    if (typeof file === 'string') handleFilePath(file);
   }
 </script>
 
-<main class="container">
-  <h1>Welcome to Tauri + Svelte</h1>
-
-  <div class="row">
-    <a href="https://vite.dev" target="_blank">
-      <img src="/vite.svg" class="logo vite" alt="Vite Logo" />
-    </a>
-    <a href="https://tauri.app" target="_blank">
-      <img src="/tauri.svg" class="logo tauri" alt="Tauri Logo" />
-    </a>
-    <a href="https://svelte.dev" target="_blank">
-      <img src="/svelte.svg" class="logo svelte-kit" alt="SvelteKit Logo" />
-    </a>
+<!-- drag-over overlay -->
+{#if isDragOver}
+  <div class="drag-overlay">
+    <p>놓아서 열기</p>
   </div>
-  <p>Click on the Tauri, Vite, and SvelteKit logos to learn more.</p>
+{/if}
 
-  <form class="row" onsubmit={greet}>
-    <input id="greet-input" placeholder="Enter a name..." bind:value={name} />
-    <button type="submit">Greet</button>
-  </form>
-  <p>{greetMsg}</p>
-</main>
+<div class="app">
+  <!-- panels -->
+  <div class="panels">
+    {#if beforeSrc}
+      <ImagePanel label="Before" src={beforeSrc} />
+      <div class="divider"></div>
+      <ImagePanel label="After" placeholder="처리 결과가 여기 표시됩니다." />
+    {:else}
+      <DropZone onBrowse={browse} />
+    {/if}
+  </div>
+
+  <!-- status bar -->
+  <div class="status-bar">
+    <span class="status-text">{status}</span>
+    <div class="status-right">
+      {#if beforeSrc}
+        <button class="reset-btn" onclick={reset} title="초기화">✕ Reset</button>
+      {/if}
+      <span class="version">v0.1</span>
+    </div>
+  </div>
+</div>
 
 <style>
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.svelte-kit:hover {
-  filter: drop-shadow(0 0 2em #ff3e00);
-}
-
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
-}
-
-.container {
-  margin: 0;
-  padding-top: 10vh;
+.app {
+  height: 100vh;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  text-align: center;
+  padding: 12px 16px 0;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
-}
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
+.panels {
+  flex: 1;
   display: flex;
-  justify-content: center;
+  gap: 0;
+  min-height: 0;
+  padding-bottom: 8px;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+.divider {
+  width: 4px;
+  background: #1e1e1e;
+  flex-shrink: 0;
 }
 
-a:hover {
-  color: #535bf2;
+.status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0 6px;
+  border-top: 1px solid #2a2a2a;
+  font-size: 0.78rem;
 }
 
-h1 {
-  text-align: center;
+.status-text {
+  color: #888;
 }
 
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
+.status-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-button {
+.reset-btn {
+  background: none;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #888;
+  padding: 2px 8px;
+  font-size: 0.75rem;
   cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
 }
 
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
+.reset-btn:hover {
+  border-color: #ff6b6b;
+  color: #ff6b6b;
 }
 
-input,
-button {
-  outline: none;
+.drag-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 212, 170, 0.08);
+  border: 2px dashed #00d4aa;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #00d4aa;
+  z-index: 100;
+  pointer-events: none;
 }
-
-#greet-input {
-  margin-right: 5px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
-  }
-
-  a:hover {
-    color: #24c8db;
-  }
-
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
-  }
-}
-
 </style>

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-app",
+  "productName": "BGDrop",
   "version": "0.1.0",
-  "identifier": "com.pinecone.tauri-app",
+  "identifier": "com.dycode.bgdrop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,13 +12,20 @@
   "app": {
     "windows": [
       {
-        "title": "tauri-app",
-        "width": 800,
-        "height": 600
+        "title": "BGDrop",
+        "width": 900,
+        "height": 680,
+        "minWidth": 700,
+        "minHeight": 520,
+        "resizable": true
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
     }
   },
   "bundle": {
