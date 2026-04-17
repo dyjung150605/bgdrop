@@ -2,8 +2,8 @@
 
 ## Project Overview
 AI-powered background remover desktop app.
-- **현재**: Python (tkinter + rembg) — `python/` 디렉터리
-- **이주 중**: Rust + Tauri — `tauri/` 디렉터리 (환경 준비 후 생성 예정)
+- **레거시**: Python (tkinter + rembg) — `python/` 디렉터리 (참조용)
+- **현재 개발 중**: Rust + Tauri — `tauri/` 디렉터리
 Working directory: `BgDrop/` only. Do not create/modify files outside.
 
 ## Folder Structure
@@ -13,52 +13,75 @@ BgDrop/
 │   ├── core/       # remover, auto_selector, simulator
 │   ├── ui/         # tkinter UI 컴포넌트
 │   └── main.py
-├── tauri/          # Tauri 앱 (이주 대상, 미생성)
-├── models/         # ONNX 모델 파일 (gitignored)
+├── tauri/          # Tauri 앱 (현재 개발 중)
+│   ├── src/        # SvelteKit 프런트엔드
+│   │   ├── lib/    # DropZone, ImagePanel, AutoPanel 컴포넌트
+│   │   └── routes/ # +page.svelte (메인 페이지)
+│   ├── src-tauri/  # Rust 백엔드
+│   │   └── src/lib.rs  # 모든 Tauri 커맨드
+│   ├── vite.config.js  # dev port: 1430
+│   └── package.json
+├── models/         # ONNX 모델 파일 (gitignored, ~/.u2net/에서 복사)
 ├── assets/         # 아이콘 등
 └── docs/
 ```
 
-## Python App (python/)
+## Tauri App (tauri/) — 현재 메인
+- **스택**: Tauri 2 + SvelteKit + TypeScript / Rust (ort 2.0.0-rc.12)
+- **실행**: `cd tauri && npm run tauri dev`
+- **dev port**: 1430 (다른 Tauri 앱과 충돌 방지)
+- **모델 경로**: `BgDrop/models/*.onnx` (dev 시 CARGO_MANIFEST_DIR 기준)
+
+## Tauri Architecture
+
+### Rust (src-tauri/src/lib.rs)
+```
+ModelCache              # 세션 캐시 (모델별 한 번만 로드) + last_raw 저장
+run_pipeline_raw()      # ONNX 추론 → raw RGBA (alpha clean 미적용)
+do_alpha_clean()        # lo/hi 임계값으로 알파 채널 재매핑
+post_process_mask()     # morphological close+open (노이즈 제거)
+analyze_image()         # 엣지 밀도 + 피부색 휴리스틱 → 후보 조합 반환
+start_simulations()     # 스레드에서 후보 시뮬레이션, Tauri 이벤트로 결과 전송
+reapply_alpha_clean()   # 재추론 없이 alpha clean 파라미터만 재적용
+remove_background()     # 메인 배경 제거 커맨드 (raw 저장 포함)
+save_result()           # 파일 저장 다이얼로그 + BG 합성
+```
+
+### Svelte 컴포넌트 (src/lib/)
+```
+DropZone.svelte     # 드래그&드롭 / 클릭 브라우저
+ImagePanel.svelte   # Before/After 이미지 패널 (줌/팬, 하단 progress bar)
+AutoPanel.svelte    # Auto Selector 썸네일 갤러리 (이벤트로 수신)
+```
+
+## Pipeline Flow (Tauri)
+Model → Post Process Mask (morphological) → Alpha Clean (lo/hi 슬라이더) → [Alpha Matting: 미구현]
+
+- lo 미만 → 완전 투명, hi 초과 → 완전 불투명, 사이는 선형 보간
+- Alpha Clean lo/hi 기본값: lo=80, hi=200 (튜닝 필요)
+- ISNet: 1024×1024 입력, U2Net: 320×320 입력
+- 전처리 resize: Triangle (bilinear, 속도 우선)
+
+## Auto Selector
+- 이미지 분석: Sobel gradient(엣지 밀도) + Kovac rule(피부색 비율)
+- 6개 사전 정의 조합에서 4개 선택 (휴리스틱 기반, 24조합 전체 탐색은 아님)
+- 시뮬레이션: 512px 다운스케일로 각 후보 실행 → Tauri 이벤트로 스트리밍
+- 썸네일 클릭 → 즉시 미리보기(tick() 후) → 백그라운드 풀해상도 처리
+
+## Known Issues / TODO
+- [ ] Alpha Matting 미구현 (pymatting → Rust 포팅 복잡)
+- [ ] Edit Panel (Crop/Mosaic) 미이식 — Python 버전 참조
+- [ ] Auto Selector 선별 로직 개선 — MobileNet-SSD ONNX로 교체 고려
+- [ ] 상용 모델 추가 — BiRefNet (CC BY-NC 4.0, 라이선스 동의 모달 필요)
+- [ ] 속도 최적화 — base64 PNG 인코딩 병목, temp file 방식으로 전환 고려
+
+## Python App (python/) — 레거시 참조용
 - Python 3.13, tkinter + tkinterdnd2, rembg (ISNet/U2Net), Pillow, onnxruntime
 - 실행: `cd python && python main.py`
 - 빌드: `cd python && build.bat` (Windows) / `build.sh` (macOS)
-- Platform detection: `ui/platform.py` → `FONT_FAMILY`, `HAS_DND`, `IS_WINDOWS`, `IS_MACOS`
-
-## Python Architecture
-```
-python/main.py              # Entry point, DPI fix, conditional DnD
-python/core/remover.py      # rembg wrapper, threaded processing, alpha clean
-python/core/auto_selector.py # 이미지 분석, 파이프라인 후보 선정
-python/core/simulator.py    # 다운스케일 시뮬레이션 (멀티스레드)
-python/ui/platform.py       # OS detection, font, DnD availability
-python/ui/app_window.py     # Main controller, pipeline, view switching
-python/ui/auto_dialog.py    # Auto Selector 썸네일 갤러리 다이얼로그
-python/ui/drop_zone.py      # Drag & drop canvas
-python/ui/result_panel.py   # Before/After preview, zoom/pan, save
-python/ui/edit_panel.py     # Crop + mosaic tools, zoom/pan
-python/ui/bg_combo.py       # Background color selector (horizontal circles)
-python/ui/tooltip.py        # Hover tooltip widget
-```
-
-## Pipeline Flow
-Model (ISNet/U2Net/Portrait) → Post Process Mask (rembg morphology) → Alpha Clean (threshold remap) → Alpha Matting (edge refinement)
-
-- Post Process Mask + Alpha Clean 병용 시 시너지 효과 (각각 단독 50-60%, 병용 90%)
-- Alpha Matting은 2-3x 느림, 머리카락/털 등에 효과적
-- ISNet이 U2Net보다 경계 품질 우수
-
-## Key Design Decisions
-- `show_after`는 After 캐시만 갱신 (Before 건드리지 않음) — 토글 성능
-- 줌: 캐시(1200px) 기반 fast render → 멈추면 sharp render
-- 편집화면 줌: Ctrl+wheel, 팬: Ctrl+drag (도구와 분리)
-- 이미지 로드: RGBA 보존(Before 표시용), RGB 변환(rembg 처리용) 분리
-- 배경색 선택 시 저장에도 반영 (checker=투명 그대로)
-
-## Known Bugs
-- [ ] After 라벨이 Before 쪽으로 밀리는 현상 (header grid 레이아웃 이슈, 창 크기에 따라 재현)
 
 ## Rules
 - 버전 숫자 변경, git push는 반드시 사용자에게 먼저 물어볼 것
-- 라이선스 제약: AI 모델은 MIT만 사용 (u2net, isnet-general-use, u2net_human_seg). birefnet/bria-rmbg는 CC BY-NC 4.0이므로 금지
+- 라이선스: MIT 모델만 기본 사용 (u2net, isnet-general-use, u2net_human_seg)
+  - BiRefNet/BRIA RMBG는 CC BY-NC 4.0 → 사용자 동의 기반으로만 추가 가능
 - BgDrop/ 내부에서만 작업

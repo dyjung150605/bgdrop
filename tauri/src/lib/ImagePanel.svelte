@@ -36,7 +36,6 @@
   }
 
   function onMouseUp() { dragStart = null; }
-
   function onDblClick() { zoom = 1; panX = 0; panY = 0; }
 </script>
 
@@ -52,9 +51,7 @@
     ondblclick={onDblClick}
     style="cursor: {src ? 'grab' : 'default'}; background: {bgColor ?? '#2a2a2a'}; {!bgColor && src ? 'background-image: repeating-conic-gradient(#333 0% 25%, #2a2a2a 0% 50%); background-size: 20px 20px;' : ''}"
   >
-    {#if loading}
-      <div class="spinner"></div>
-    {:else if src}
+    {#if src}
       <img
         {src}
         alt={label}
@@ -63,6 +60,13 @@
       />
     {:else if placeholder}
       <p class="placeholder">{placeholder}</p>
+    {/if}
+
+    <!-- Progress bar at bottom (main window only, replaces circular spinner) -->
+    {#if loading}
+      <div class="progress-bar">
+        <div class="progress-fill"></div>
+      </div>
     {/if}
   </div>
 </div>
@@ -105,16 +109,27 @@ img {
   font-size: 0.85rem;
 }
 
-.spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid #333;
-  border-top-color: #00d4aa;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+/* Indeterminate progress bar — bottom of panel */
+.progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: #1a1a1a;
+  overflow: hidden;
+  border-radius: 0 0 4px 4px;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+.progress-fill {
+  height: 100%;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, #00d4aa, transparent);
+  animation: slide 1.4s ease-in-out infinite;
+}
+
+@keyframes slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
 }
 </style>

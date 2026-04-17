@@ -61,6 +61,50 @@ AI 기반 배경제거 데스크톱 앱. 드래그&드롭으로 즉시 배경 �
 
 ---
 
+## Tauri 이주 — v2.x 시리즈
+
+> Python(tkinter) → Rust + Tauri 2 + SvelteKit 전면 이주.
+> 배포 크기: ~380MB(PyInstaller) → 앱 자체 ~8MB (모델 별도)
+
+### 환경 구성
+- **스택**: Tauri 2.10.1, Rust 1.95.0 (MSVC), Node.js 24.14.0, SvelteKit
+- **ONNX**: ort 2.0.0-rc.12 (download-binaries feature)
+- **dev port**: 1430 (다른 Tauri 앱과 포트 충돌 방지)
+- **모델**: `~/.u2net/*.onnx` → `BgDrop/models/`로 복사해 사용
+
+### v2.0 (P1) — 앱 셸 + 드롭존 + 이미지 표시
+- Tauri 2 + SvelteKit 스캐폴드
+- 파일 드롭/클릭 브라우저로 이미지 로드 (asset protocol)
+- Before/After 패널 (기본 줌/팬)
+- 상태바 + Reset 버튼
+
+### v2.1 (P2) — Rust ONNX 배경 제거
+- ort 2.0.0-rc.12로 ISNet/U2Net ONNX 추론 구현
+- 전처리: NCHW Vec<f32>, sigmoid 마스크, 모델별 입력 크기 (ISNet 1024, U2Net 320)
+- 세션 캐싱 (모델별 한 번만 로드)
+- 결과: base64 PNG로 프런트 전달
+- **의사결정**: ndarray 대신 `(Vec<i64>, Vec<f32>)` 튜플로 ORT 텐서 생성 (ort rc.12 API 호환)
+
+### v2.2 (P3) — 파이프라인 컨트롤 + BG 색상 + 저장
+- 모델 선택 (ISNet/U2Net/Portrait)
+- Post Process Mask: Rust morphological close+open 직접 구현
+- Alpha Clean 체크박스 + lo/hi 슬라이더 (재추론 없이 즉시 재적용)
+- BG 색상: Checker/White/Black/Chroma(#00ff00)/Custom — Python 버전과 동일
+- Before 패널도 BG 색상 공유 (원본이 투명하지 않음을 시각적으로 표시)
+- Save (PNG/WebP, BG 합성 포함)
+- **의사결정**: Alpha Clean lo/hi를 Rust 앱 상태(last_raw)로 저장 → 슬라이더 변경 시 재추론 없이 재적용
+
+### v2.3 (P4) — Auto Selector (Smart Match)
+- 이미지 분석: Sobel gradient(엣지 밀도) + Kovac rule(피부색 비율)
+- 6개 사전 정의 조합 → 휴리스틱으로 4개 선택
+- 시뮬레이션: 512px 다운스케일, Tauri 이벤트(`sim-result`)로 스트리밍
+- AutoPanel: 썸네일 갤러리, Claude Code amber(#d97757) thinking 텍스트
+- 썸네일 클릭 → `tick()` 후 즉시 미리보기 → 백그라운드 풀해상도 처리
+- 메인 창 로딩: 원형 스피너 → 하단 shimmer 막대 바
+- **의사결정**: 24조합 전체 탐색 대신 6개 레시피 + 휴리스틱 (속도 vs 정확도 트레이드오프)
+
+---
+
 ## 주요 의사결정 기록
 
 ### 파이프라인 구성
@@ -120,6 +164,29 @@ AI 기반 배경제거 데스크톱 앱. 드래그&드롭으로 즉시 배경 �
 # 향후 계획
 
 ## 진행 예정 (Next)
+
+### ✅ 완료된 항목
+- Tauri 이주 P1~P4 (앱 셸, ONNX 추론, 파이프라인 컨트롤, Auto Selector)
+- 폴더 구조 재편: `python/` (레거시) + `tauri/` (현재) 분리
+
+### 🔜 미완성 / 다음 작업
+
+#### Edit Panel 이식
+- Python 버전의 Crop + Mosaic 도구를 Tauri/Svelte로 포팅
+- `python/ui/edit_panel.py` 참조
+
+#### Alpha Matting 구현
+- pymatting 알고리즘의 Rust 포팅 또는 대안 탐색
+- 현재 UI만 있고 기능은 disabled
+
+#### Auto Selector 선별 로직 강화
+- 현재: Sobel + Kovac 픽셀 통계 휴리스틱
+- 개선안: MobileNet-SSD ONNX (Apache 2.0, ~7MB) — 이미 ort 크레이트 보유
+- "person 감지됨 → u2net_human_seg 우선" 판단이 Kovac보다 정확할 것
+
+#### Alpha Clean 튜닝
+- 현재 기본값 lo=80, hi=200 — 최적값 미확정
+- 슬라이더로 조정 가능하도록 구현됨 → 테스트 후 디폴트 확정 필요
 
 ### 🛒 상용(비상업 제약) 고품질 모델 선택지 추가
 
