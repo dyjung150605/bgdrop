@@ -7,8 +7,8 @@ echo "============================================"
 pyinstaller \
   --onedir --windowed \
   --name BGDrop-Online \
-  --icon assets/icon.icns \
-  --add-data "assets:assets" \
+  --icon ../assets/icon.icns \
+  --add-data "../assets:assets" \
   --collect-all rembg \
   --collect-all tkinterdnd2 \
   --recursive-copy-metadata rembg \
@@ -19,18 +19,18 @@ echo ""
 echo "============================================"
 echo "[2/2] Building BGDrop-Offline (model bundled)"
 echo "============================================"
-echo "NOTE: models/u2net.onnx must exist before running this step."
-if [ ! -f "models/u2net.onnx" ]; then
-  echo "ERROR: models/u2net.onnx not found. Download it first."
+echo "NOTE: ../models/u2net.onnx must exist before running this step."
+if [ ! -f "../models/u2net.onnx" ]; then
+  echo "ERROR: ../models/u2net.onnx not found. Download it first."
   echo "Download from: https://github.com/danielgatis/rembg"
   exit 1
 fi
 pyinstaller \
   --onedir --windowed \
   --name BGDrop-Offline \
-  --icon assets/icon.icns \
-  --add-data "assets:assets" \
-  --add-data "models:models" \
+  --icon ../assets/icon.icns \
+  --add-data "../assets:assets" \
+  --add-data "../models:models" \
   --collect-all rembg \
   --collect-all tkinterdnd2 \
   --recursive-copy-metadata rembg \

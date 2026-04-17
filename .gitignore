@@ -1,8 +1,15 @@
+# Python
 .venv/
 .claude/
 __pycache__/
 *.pyc
-dist/
-build/
+python/dist/
+python/build/
 *.spec
+
+# Tauri / Rust
+tauri/target/
+tauri/node_modules/
+
+# Shared
 models/*.onnx

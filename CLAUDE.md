@@ -1,25 +1,44 @@
 # CLAUDE.md — BGDrop Development Guide
 
 ## Project Overview
-AI-powered background remover desktop app (tkinter + rembg).
+AI-powered background remover desktop app.
+- **현재**: Python (tkinter + rembg) — `python/` 디렉터리
+- **이주 중**: Rust + Tauri — `tauri/` 디렉터리 (환경 준비 후 생성 예정)
 Working directory: `BgDrop/` only. Do not create/modify files outside.
 
-## Tech Stack
+## Folder Structure
+```
+BgDrop/
+├── python/         # Python 앱 (레거시, 참조용)
+│   ├── core/       # remover, auto_selector, simulator
+│   ├── ui/         # tkinter UI 컴포넌트
+│   └── main.py
+├── tauri/          # Tauri 앱 (이주 대상, 미생성)
+├── models/         # ONNX 모델 파일 (gitignored)
+├── assets/         # 아이콘 등
+└── docs/
+```
+
+## Python App (python/)
 - Python 3.13, tkinter + tkinterdnd2, rembg (ISNet/U2Net), Pillow, onnxruntime
-- Cross-platform: Windows (primary), macOS (supported), Windows ARM (native)
+- 실행: `cd python && python main.py`
+- 빌드: `cd python && build.bat` (Windows) / `build.sh` (macOS)
 - Platform detection: `ui/platform.py` → `FONT_FAMILY`, `HAS_DND`, `IS_WINDOWS`, `IS_MACOS`
 
-## Architecture
+## Python Architecture
 ```
-main.py                 # Entry point, DPI fix, conditional DnD
-core/remover.py         # rembg wrapper, threaded processing, alpha clean
-ui/platform.py          # OS detection, font, DnD availability
-ui/app_window.py        # Main controller, pipeline, view switching
-ui/drop_zone.py         # Drag & drop canvas
-ui/result_panel.py      # Before/After preview, zoom/pan, save
-ui/edit_panel.py        # Crop + mosaic tools, zoom/pan
-ui/bg_combo.py          # Background color selector (horizontal circles)
-ui/tooltip.py           # Hover tooltip widget
+python/main.py              # Entry point, DPI fix, conditional DnD
+python/core/remover.py      # rembg wrapper, threaded processing, alpha clean
+python/core/auto_selector.py # 이미지 분석, 파이프라인 후보 선정
+python/core/simulator.py    # 다운스케일 시뮬레이션 (멀티스레드)
+python/ui/platform.py       # OS detection, font, DnD availability
+python/ui/app_window.py     # Main controller, pipeline, view switching
+python/ui/auto_dialog.py    # Auto Selector 썸네일 갤러리 다이얼로그
+python/ui/drop_zone.py      # Drag & drop canvas
+python/ui/result_panel.py   # Before/After preview, zoom/pan, save
+python/ui/edit_panel.py     # Crop + mosaic tools, zoom/pan
+python/ui/bg_combo.py       # Background color selector (horizontal circles)
+python/ui/tooltip.py        # Hover tooltip widget
 ```
 
 ## Pipeline Flow
