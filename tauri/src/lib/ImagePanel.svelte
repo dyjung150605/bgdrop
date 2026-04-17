@@ -3,10 +3,12 @@
     label,
     src = null,
     placeholder = '',
+    loading = false,
   }: {
     label: string;
     src?: string | null;
     placeholder?: string;
+    loading?: boolean;
   } = $props();
 
   let zoom = $state(1.0);
@@ -17,8 +19,7 @@
   function onWheel(e: WheelEvent) {
     if (!src) return;
     e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-    zoom = Math.min(Math.max(zoom * factor, 0.2), 10);
+    zoom = Math.min(Math.max(zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15), 0.2), 10);
   }
 
   function onMouseDown(e: MouseEvent) {
@@ -34,11 +35,7 @@
 
   function onMouseUp() { dragStart = null; }
 
-  function onDblClick() {
-    zoom = 1.0;
-    panX = 0;
-    panY = 0;
-  }
+  function onDblClick() { zoom = 1; panX = 0; panY = 0; }
 </script>
 
 <div class="panel">
@@ -53,7 +50,9 @@
     ondblclick={onDblClick}
     style="cursor: {src ? 'grab' : 'default'}"
   >
-    {#if src}
+    {#if loading}
+      <div class="spinner"></div>
+    {:else if src}
       <img
         {src}
         alt={label}
@@ -97,11 +96,23 @@ img {
   max-height: 100%;
   object-fit: contain;
   pointer-events: none;
-  transition: transform 0.05s ease-out;
 }
 
 .placeholder {
   color: #555;
   font-size: 0.85rem;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #333;
+  border-top-color: #00d4aa;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

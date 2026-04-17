@@ -3,14 +3,19 @@
   import { onMount, onDestroy } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { convertFileSrc } from '@tauri-apps/api/core';
+  import { invoke } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
   import DropZone from '$lib/DropZone.svelte';
   import ImagePanel from '$lib/ImagePanel.svelte';
 
   const VALID_EXT = new Set(['jpg', 'jpeg', 'png', 'webp', 'bmp']);
+  const DEFAULT_MODEL = 'isnet-general-use';
 
-  let beforeSrc = $state<string | null>(null);
-  let status = $state('이미지를 드롭하거나 클릭해서 불러오세요.');
+  let beforeSrc  = $state<string | null>(null);
+  let afterSrc   = $state<string | null>(null);
+  let imagePath  = $state<string | null>(null);
+  let processing = $state(false);
+  let status     = $state('이미지를 드롭하거나 클릭해서 불러오세요.');
   let isDragOver = $state(false);
 
   let unlisten: (() => void) | null = null;
@@ -18,11 +23,9 @@
   onMount(async () => {
     unlisten = await getCurrentWindow().onDragDropEvent((event) => {
       const t = event.payload.type;
-      if (t === 'enter') {
-        isDragOver = true;
-      } else if (t === 'leave') {
-        isDragOver = false;
-      } else if (t === 'drop') {
+      if (t === 'enter') isDragOver = true;
+      else if (t === 'leave') isDragOver = false;
+      else if (t === 'drop') {
         isDragOver = false;
         const paths = (event.payload as any).paths as string[];
         if (paths?.length) handleFilePath(paths[0]);
@@ -32,26 +35,18 @@
 
   onDestroy(() => { unlisten?.(); });
 
-  function ext(path: string) {
-    return path.split('.').pop()?.toLowerCase() ?? '';
-  }
-
-  function filename(path: string) {
-    return path.split(/[\\/]/).pop() ?? path;
-  }
+  function ext(path: string) { return path.split('.').pop()?.toLowerCase() ?? ''; }
+  function filename(path: string) { return path.split(/[\\/]/).pop() ?? path; }
 
   function handleFilePath(path: string) {
     if (!VALID_EXT.has(ext(path))) {
       status = `지원하지 않는 형식: .${ext(path)}`;
       return;
     }
+    imagePath = path;
     beforeSrc = convertFileSrc(path);
+    afterSrc = null;
     status = filename(path);
-  }
-
-  function reset() {
-    beforeSrc = null;
-    status = '이미지를 드롭하거나 클릭해서 불러오세요.';
   }
 
   async function browse() {
@@ -61,22 +56,59 @@
     });
     if (typeof file === 'string') handleFilePath(file);
   }
+
+  async function removeBackground() {
+    if (!imagePath || processing) return;
+    processing = true;
+    afterSrc = null;
+    status = 'Processing...';
+    try {
+      const result = await invoke<string>('remove_background', {
+        imagePath,
+        modelName: DEFAULT_MODEL,
+      });
+      afterSrc = result;
+      status = `완료  —  ${filename(imagePath)}`;
+    } catch (e) {
+      status = `오류: ${e}`;
+    } finally {
+      processing = false;
+    }
+  }
+
+  function reset() {
+    beforeSrc = null;
+    afterSrc = null;
+    imagePath = null;
+    status = '이미지를 드롭하거나 클릭해서 불러오세요.';
+  }
 </script>
 
-<!-- drag-over overlay -->
 {#if isDragOver}
-  <div class="drag-overlay">
-    <p>놓아서 열기</p>
-  </div>
+  <div class="drag-overlay"><p>놓아서 열기</p></div>
 {/if}
 
 <div class="app">
+  <!-- control bar (이미지 로드 후에만) -->
+  {#if beforeSrc}
+    <div class="control-bar">
+      <button
+        class="btn-primary"
+        onclick={removeBackground}
+        disabled={processing}
+      >
+        {processing ? '처리 중…' : '배경 제거'}
+      </button>
+    </div>
+  {/if}
+
   <!-- panels -->
   <div class="panels">
     {#if beforeSrc}
       <ImagePanel label="Before" src={beforeSrc} />
       <div class="divider"></div>
-      <ImagePanel label="After" placeholder="처리 결과가 여기 표시됩니다." />
+      <ImagePanel label="After" src={afterSrc} loading={processing}
+        placeholder="배경 제거 결과가 여기 표시됩니다." />
     {:else}
       <DropZone onBrowse={browse} />
     {/if}
@@ -87,7 +119,7 @@
     <span class="status-text">{status}</span>
     <div class="status-right">
       {#if beforeSrc}
-        <button class="reset-btn" onclick={reset} title="초기화">✕ Reset</button>
+        <button class="reset-btn" onclick={reset}>✕ Reset</button>
       {/if}
       <span class="version">v0.1</span>
     </div>
@@ -99,22 +131,39 @@
   height: 100vh;
   display: flex;
   flex-direction: column;
-  padding: 12px 16px 0;
+  padding: 10px 16px 0;
 }
+
+.control-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 8px;
+}
+
+.btn-primary {
+  background: #00d4aa;
+  color: #1e1e1e;
+  border: none;
+  border-radius: 5px;
+  padding: 5px 18px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-primary:hover:not(:disabled) { background: #00b894; }
+.btn-primary:disabled { opacity: 0.5; cursor: default; }
 
 .panels {
   flex: 1;
   display: flex;
-  gap: 0;
   min-height: 0;
   padding-bottom: 8px;
 }
 
-.divider {
-  width: 4px;
-  background: #1e1e1e;
-  flex-shrink: 0;
-}
+.divider { width: 4px; background: #1e1e1e; flex-shrink: 0; }
 
 .status-bar {
   display: flex;
@@ -125,9 +174,7 @@
   font-size: 0.78rem;
 }
 
-.status-text {
-  color: #888;
-}
+.status-text { color: #888; }
 
 .status-right {
   display: flex;
@@ -142,14 +189,10 @@
   color: #888;
   padding: 2px 8px;
   font-size: 0.75rem;
-  cursor: pointer;
   transition: border-color 0.15s, color 0.15s;
 }
 
-.reset-btn:hover {
-  border-color: #ff6b6b;
-  color: #ff6b6b;
-}
+.reset-btn:hover { border-color: #ff6b6b; color: #ff6b6b; }
 
 .drag-overlay {
   position: fixed;
@@ -166,4 +209,6 @@
   z-index: 100;
   pointer-events: none;
 }
+
+.version { color: #555; }
 </style>
