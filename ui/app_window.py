@@ -10,6 +10,9 @@ from ui.result_panel import ResultPanel
 from ui.edit_panel import EditPanel
 from ui.tooltip import ToolTip
 from core.remover import BackgroundRemover, AVAILABLE_MODELS, _clean_alpha
+from core.auto_selector import analyze_image, pick_candidates
+from core.simulator import simulate_async
+from ui.auto_dialog import AutoSelectorDialog, compute_thumb_size
 
 
 class AppWindow:
@@ -24,6 +27,9 @@ class AppWindow:
         self._source_image = None
         self._process_image = None
         self._raw_result = None
+        self._suppress_trace = False
+        self._auto_dialog = None
+        self._sim_gen = 0  # bumped on every auto flow; stale callbacks are dropped
 
         # ===== main view widgets =====
         self._main_widgets = []
@@ -62,6 +68,7 @@ class AppWindow:
                                         on_file_dropped=self._on_file)
         self.result_panel.pack(side=tk.TOP, padx=20, pady=(0, 4),
                                fill=tk.BOTH, expand=True)
+        self.result_panel.set_bg_listener(self._on_bg_color_change)
         self._main_widgets.append(self.result_panel)
 
         # ===== edit panel (created once, shown/hidden) =====
@@ -75,6 +82,29 @@ class AppWindow:
         self._load_model(AVAILABLE_MODELS[0][0])
 
     def _build_pipeline(self, frame):
+        # Auto Selector toggle (left-most — overrides the manual pipeline on file drop)
+        info_auto = tk.Label(frame, text="\u24d8", bg="#1e1e1e", fg="#00d4aa",
+                             font=(FONT_FAMILY, 11), cursor="hand2")
+        info_auto.pack(side=tk.LEFT)
+        ToolTip(info_auto,
+                "Auto Selector\n"
+                "\uc774\ubbf8\uc9c0\ub97c \ubd84\uc11d\ud574 \ucd94\ucc9c \uc870\ud569 3~4\uac1c\ub97c\n"
+                "\ucd95\uc18c\ubcf8\uc73c\ub85c \uc2dc\ubbac\ub808\uc774\uc158\ud558\uace0,\n"
+                "\uc0ac\uc6a9\uc790\uac00 \uc378\ub124\uc77c\uc744 \ub354\ube14\ud074\ub9ad\ud558\uba74\n"
+                "\uc6d0\ubcf8 \ud574\uc0c1\ub3c4\uc5d0 \uc801\uc6a9\ub429\ub2c8\ub2e4.\n"
+                "\uaebc\uc838 \uc788\uc73c\uba74 \uc9c1\uc811 \uc124\uc815 \uc0ac\uc6a9.")
+        self._auto_var = tk.BooleanVar(value=False)
+        self._auto_var.trace_add("write", self._on_auto_toggle)
+        tk.Checkbutton(
+            frame, text="\U0001fa84 Auto", variable=self._auto_var,
+            bg="#1e1e1e", fg="#00d4aa", selectcolor="#2a2a2a",
+            activebackground="#1e1e1e", activeforeground="#00ffcc",
+            font=(FONT_FAMILY, 9, "bold"),
+        ).pack(side=tk.LEFT, padx=(2, 10))
+
+        tk.Label(frame, text="\u2502", bg="#1e1e1e", fg="#333333",
+                 font=(FONT_FAMILY, 10)).pack(side=tk.LEFT, padx=(0, 10))
+
         tk.Label(
             frame, text="Pipeline:", bg="#1e1e1e", fg="#666666",
             font=(FONT_FAMILY, 8),
@@ -206,13 +236,15 @@ class AppWindow:
     # ===== live toggle =====
 
     def _on_alpha_clean_toggle(self, *_args):
-        if self._raw_result is None:
+        if self._suppress_trace or self._raw_result is None:
             return
         state = "ON" if self._alpha_clean_var.get() else "OFF"
         self._set_status(f"Alpha Clean {state}")
         self._apply_final_and_show()
 
     def _on_reprocess_toggle(self, *_args):
+        if self._suppress_trace:
+            return
         if self._process_image is not None and not self._processing:
             state = "ON" if self._alpha_matting_var.get() else "OFF"
             self._set_status(f"Alpha Matting {state} — reprocessing...")
@@ -278,7 +310,128 @@ class AppWindow:
         self._source_image = img                    # original (RGBA OK) for Before preview
         self._process_image = img.convert("RGB")     # RGB for rembg (always consistent)
         self.result_panel.show_before(img)
-        self._run_removal(self._process_image)
+
+        if self._auto_var.get():
+            self._start_auto_flow()
+        else:
+            # If a previous auto dialog is still open, close it — we're switching to manual.
+            self._discard_auto_dialog()
+            self._run_removal(self._process_image)
+
+    # ===== auto selector flow =====
+
+    def _on_auto_toggle(self, *_args):
+        """Trigger auto flow when toggled ON with an image already loaded."""
+        if self._suppress_trace:
+            return
+        if (self._auto_var.get() and self._process_image is not None
+                and not self._processing and self._auto_dialog is None):
+            self._start_auto_flow()
+
+    def _start_auto_flow(self):
+        """Analyze image, pick candidates, simulate on a downscaled copy,
+        show thumbnails, apply chosen combo to the full-res image."""
+        # If a previous dialog is still open (e.g. user dropped a new image),
+        # discard it silently — stale simulation callbacks are filtered by _sim_gen.
+        self._discard_auto_dialog()
+
+        self._set_status("분석 중…")
+        features = analyze_image(self._process_image)
+        candidates = pick_candidates(features)
+        if not candidates:
+            self._run_removal(self._process_image)
+            return
+
+        dialog = AutoSelectorDialog(
+            self.root,
+            on_pick=self._on_auto_pick,
+            on_close=self._on_auto_close,
+            bg_color=self.result_panel.get_bg_color(),
+        )
+        thumb_size = compute_thumb_size(*self._process_image.size)
+        dialog.reserve_slots(candidates, thumb_size=thumb_size)
+        self._auto_dialog = dialog
+
+        self._sim_gen += 1
+        gen = self._sim_gen
+        self._set_status(f"시뮬레이션 시작 ({len(candidates)}개 후보)…")
+
+        simulate_async(
+            self._process_image,
+            candidates,
+            ensure_session=self.remover.ensure_session_sync,
+            on_result=lambda k, l, img, c, g=gen: self.root.after(
+                0, self._on_sim_result, g, k, img),
+            on_complete=lambda g=gen: self.root.after(
+                0, self._on_sim_complete, g),
+            on_error=lambda k, err, g=gen: self.root.after(
+                0, self._on_sim_error, g, k, err),
+        )
+
+    def _discard_auto_dialog(self):
+        """Close the current auto dialog without invoking select/cancel callbacks."""
+        dlg = self._auto_dialog
+        if dlg is None:
+            return
+        self._auto_dialog = None
+        try:
+            dlg._closed = True
+            dlg.top.destroy()
+        except Exception:
+            pass
+
+    def _on_sim_result(self, gen, key, rgba_image):
+        if gen != self._sim_gen or self._auto_dialog is None:
+            return
+        self._auto_dialog.show_result(key, rgba_image)
+
+    def _on_sim_error(self, gen, key, err):
+        if gen != self._sim_gen or self._auto_dialog is None:
+            return
+        self._auto_dialog.show_error(key, err)
+
+    def _on_sim_complete(self, gen):
+        if gen != self._sim_gen:
+            return
+        if self._auto_dialog is not None:
+            self._auto_dialog.set_complete()
+        self._set_status("후보를 선택하세요.")
+
+    def _on_auto_pick(self, combo):
+        """User clicked a thumbnail — sync UI, apply to full-res. Dialog stays open."""
+        self._apply_combo_to_ui(combo)
+        if combo["model"] != self.remover.current_model:
+            self._pending_reprocess = True
+            self._load_model(combo["model"])
+        else:
+            self._run_removal(self._process_image)
+
+    def _on_auto_close(self, had_pick):
+        """Dialog was dismissed. If nothing was ever picked, run manual fallback."""
+        self._auto_dialog = None
+        if not had_pick:
+            self._run_removal(self._process_image)
+
+    def _on_bg_color_change(self, color):
+        """Forward main-window BG color changes to the open auto dialog."""
+        if self._auto_dialog is not None:
+            self._auto_dialog.update_bg_color(color)
+
+    def _apply_combo_to_ui(self, combo):
+        """Reflect a selected combo in the pipeline widgets without triggering traces."""
+        self._suppress_trace = True
+        try:
+            self._postmask_var.set(combo["post_process"])
+            self._alpha_clean_var.set(combo["alpha_clean"])
+            self._alpha_matting_var.set(combo["alpha_matting"])
+            # Update combobox display
+            for idx, (name, _label) in enumerate(AVAILABLE_MODELS):
+                if name == combo["model"]:
+                    self._model_combo.current(idx)
+                    self._model_var.set(name)
+                    break
+        finally:
+            self._suppress_trace = False
 
     def _run_removal(self, img):
         self._processing = True

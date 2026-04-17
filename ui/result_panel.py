@@ -209,6 +209,16 @@ class ResultPanel(tk.Frame):
         self._rebuild_before_cache()
         self._rebuild_after_cache()
         self._render_fast()
+        listener = getattr(self, "_bg_listener", None)
+        if listener:
+            listener(color)
+
+    def set_bg_listener(self, callback):
+        """Register a callback invoked with (color) whenever BG changes."""
+        self._bg_listener = callback
+
+    def get_bg_color(self):
+        return self._bg_color
 
     # ===== caching =====
 

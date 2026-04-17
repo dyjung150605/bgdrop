@@ -69,6 +69,32 @@ class BackgroundRemover:
     def session(self):
         return self._sessions.get(self.current_model)
 
+    def ensure_session_sync(self, model_name):
+        """Synchronously load (if needed) and return a session for model_name.
+
+        Safe to call from a worker thread. Does not change `current_model`.
+        """
+        if model_name in self._sessions:
+            return self._sessions[model_name]
+
+        local_model = os.path.join(
+            _get_base_dir(), "models", f"{model_name}.onnx"
+        )
+        if os.path.exists(local_model):
+            session = new_session(
+                model_name,
+                providers=["CPUExecutionProvider"],
+                model_path=local_model,
+            )
+            if self.mode is None:
+                self.mode = "offline"
+        else:
+            session = new_session(model_name)
+            if self.mode is None:
+                self.mode = "online"
+        self._sessions[model_name] = session
+        return session
+
     def remove_async(
         self, pil_image: Image.Image, on_success, on_error,
         alpha_clean=True, alpha_matting=False, post_process_mask=True,
