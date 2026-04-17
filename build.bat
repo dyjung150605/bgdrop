@@ -10,6 +10,7 @@ pyinstaller ^
   --add-data "assets;assets" ^
   --collect-all rembg ^
   --collect-all tkinterdnd2 ^
+  --recursive-copy-metadata rembg ^
   --hidden-import onnxruntime ^
   main.py
 
@@ -32,6 +33,7 @@ pyinstaller ^
   --add-data "models;models" ^
   --collect-all rembg ^
   --collect-all tkinterdnd2 ^
+  --recursive-copy-metadata rembg ^
   --hidden-import onnxruntime ^
   main.py
 
