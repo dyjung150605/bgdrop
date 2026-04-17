@@ -4,11 +4,13 @@
     src = null,
     placeholder = '',
     loading = false,
+    bgColor = null,
   }: {
     label: string;
     src?: string | null;
     placeholder?: string;
     loading?: boolean;
+    bgColor?: string | null;
   } = $props();
 
   let zoom = $state(1.0);
@@ -48,7 +50,7 @@
     onmousemove={onMouseMove}
     onmouseup={onMouseUp}
     ondblclick={onDblClick}
-    style="cursor: {src ? 'grab' : 'default'}"
+    style="cursor: {src ? 'grab' : 'default'}; background: {bgColor ?? '#2a2a2a'}; {!bgColor && src ? 'background-image: repeating-conic-gradient(#333 0% 25%, #2a2a2a 0% 50%); background-size: 20px 20px;' : ''}"
   >
     {#if loading}
       <div class="spinner"></div>
